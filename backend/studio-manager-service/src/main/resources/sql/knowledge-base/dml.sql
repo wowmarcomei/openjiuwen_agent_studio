@@ -59,7 +59,7 @@ INSERT INTO t_knowledge_i18n_resource VALUES (24, 'connector.KooSearch.param.App
 INSERT INTO t_knowledge_i18n_resource VALUES (25, 'connector.KooSearch.param.AppCode.remark', 'zh-cn', 'KooSearch平台接口绑定的APIG凭证的AppCode，用于认证鉴权');
 INSERT INTO t_knowledge_i18n_resource VALUES (26, 'connector.KooSearch.param.knowledge_base_detail_url.name', 'zh-cn', '知识库详情页面链接');
 INSERT INTO t_knowledge_i18n_resource VALUES (27, 'connector.KooSearch.param.knowledge_base_detail_url.remark', 'zh-cn', '知识库详情页面链接，如https://xxxx?id={{id}}。注意使用占位符{{id}}表示知识库ID，否则无法跳转到对应的知识库页面');
-INSERT INTO t_knowledge_i18n_resource VALUES (28, 'connector.His.description', 'zh-cn', '用户对接华为内部平台的知识库');
+INSERT INTO t_knowledge_i18n_resource VALUES (28, 'connector.His.description', 'zh-cn', '用户知识库');
 INSERT INTO t_knowledge_i18n_resource VALUES (29, 'ability.RETRIEVE.search_mode.doc.name', 'zh-cn', '语义检索');
 INSERT INTO t_knowledge_i18n_resource VALUES (30, 'ability.RETRIEVE.search_mode.doc.summary', 'zh-cn', '使用向量检索技术检索知识文档');
 INSERT INTO t_knowledge_i18n_resource VALUES (31, 'ability.RETRIEVE.search_mode.doc.description', 'zh-cn', '使用向量检索技术检索，对文档及结构化数据中知识进行检索，召回与用户意图相关性高的切片内容，推荐在需要结合上下文相关性、并对用户意图理解场景中使用。');
@@ -99,7 +99,7 @@ INSERT INTO t_knowledge_i18n_resource VALUES (64, 'connector.KooSearch.param.App
 INSERT INTO t_knowledge_i18n_resource VALUES (65, 'connector.KooSearch.param.AppCode.remark', 'en-us', 'AppCode of the APIG credential bound to the KooSearch interface, used for authentication.');
 INSERT INTO t_knowledge_i18n_resource VALUES (66, 'connector.KooSearch.param.knowledge_base_detail_url.name', 'en-us', 'Knowledge Base Detail URL');
 INSERT INTO t_knowledge_i18n_resource VALUES (67, 'connector.KooSearch.param.knowledge_base_detail_url.remark', 'en-us', 'Link to the knowledge base detail page, e.g., https://xxxx?id={{id}}. Note: use {{id}} as a placeholder to ensure correct redirection.');
-INSERT INTO t_knowledge_i18n_resource VALUES (68, 'connector.His.description', 'en-us', 'Users connect to Agent Builder\'s internal platform knowledge base.');
+INSERT INTO t_knowledge_i18n_resource VALUES (68, 'connector.His.description', 'en-us', 'Users connect to Agent Builders internal platform knowledge base.');
 INSERT INTO t_knowledge_i18n_resource VALUES (69, 'ability.RETRIEVE.search_mode.doc.name', 'en-us', 'Semantic Retrieval');
 INSERT INTO t_knowledge_i18n_resource VALUES (70, 'ability.RETRIEVE.search_mode.doc.summary', 'en-us', 'Using vector retrieval technology to retrieve knowledge documents.');
 INSERT INTO t_knowledge_i18n_resource VALUES (71, 'ability.RETRIEVE.search_mode.doc.description', 'en-us', 'Using vector retrieval technology to search for knowledge within documents and structured data, it retrieves slices of content that are highly relevant to user intent. This method is recommended for scenarios where contextual relevance needs to be integrated and a deep understanding of user intent is required.');
