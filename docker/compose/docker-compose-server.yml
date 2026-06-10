@@ -59,6 +59,7 @@ services:
         ipv4_address: 172.28.0.10
         aliases:
           - agent-builder.minio
+          - agent-builder-files-staging.minio
 
   minio-init:
     image: ${MINIO_MC_IMAGE}
