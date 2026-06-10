@@ -1,0 +1,236 @@
+name: Build & Push Docker Images
+
+on:
+  push:
+    branches:
+      - mxh_dev
+
+env:
+  GHCR_REGISTRY: ghcr.io
+  DOCKERHUB_PREFIX: ${{ vars.DOCKERHUB_REPO }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install pnpm
+        run: npm install -g pnpm@8.13.1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to Docker Hub
+        continue-on-error: true
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        run: |
+          BRANCH_NAME=$(echo "${GITHUB_REF_NAME}" | sed 's/[^a-zA-Z0-9._-]/-/g')
+          SHORT_SHA=$(echo "${GITHUB_SHA}" | cut -c1-7)
+          BUILD_DATE=$(date +"%Y%m%d")
+          REPO_NAME=$(echo "${{ github.event.repository.name }}" | tr '_' '-' | tr '[:upper:]' '[:lower:]')
+          GHCR_PREFIX="${{ github.repository_owner }}/${REPO_NAME}"
+          echo "branch=${BRANCH_NAME}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "build_date=${BUILD_DATE}" >> "$GITHUB_OUTPUT"
+          echo "ghcr_prefix=${GHCR_PREFIX}" >> "$GITHUB_OUTPUT"
+          echo "Branch: ${BRANCH_NAME}, SHA: ${SHORT_SHA}, Date: ${BUILD_DATE}"
+          echo "GHCR_PREFIX: ${GHCR_PREFIX}"
+
+      # ======================== Backend Build ========================
+
+      - name: Build backend with Maven
+        run: |
+          cd backend
+          mvn clean package -Dmaven.test.skip=true -U
+
+      - name: Prepare studio-manager artifacts
+        run: |
+          mkdir -p docker/studio-manager/lib
+          cp backend/studio-manager/target/studio-manager-*.jar docker/studio-manager/lib/studio-manager.jar
+          if [ -d backend/studio-manager/target/lib ]; then
+            cp backend/studio-manager/target/lib/* docker/studio-manager/lib/
+          fi
+          mkdir -p docker/studio-manager/config
+          cp backend/studio-manager-service/src/main/resources/application-manager.yml docker/studio-manager/config/
+          cp backend/studio-manager-service/src/main/resources/log4j2.xml docker/studio-manager/config/
+
+      - name: Prepare studio-service artifacts
+        run: |
+          mkdir -p docker/studio-service/lib
+          cp backend/studio-runtime/target/studio-runtime-*.jar docker/studio-service/lib/studio-service.jar
+          if [ -d backend/studio-runtime/target/lib ]; then
+            cp backend/studio-runtime/target/lib/* docker/studio-service/lib/
+          fi
+          mkdir -p docker/studio-service/config
+          cp backend/studio-runtime-service/src/main/resources/application-runtime.yml docker/studio-service/config/
+          cp backend/studio-runtime/src/main/resources/log4j2.xml docker/studio-service/config/
+
+      # ======================== Frontend Build ========================
+
+      - name: Build frontend with pnpm
+        run: |
+          cd frontend
+          mkdir -p .staging
+          cp src/index.html .staging/index.html
+          pnpm install --no-frozen-lockfile
+          NODE_OPTIONS="--max-old-space-size=4096" pnpm run build
+          cd ..
+          tar -cf docker/studio-console/agent-console.tar -C frontend dist
+
+      # ======================== Runtime Prepare ========================
+
+      - name: Prepare studio-runtime artifacts
+        run: |
+          rm -rf docker/studio-runtime/agent_runtime
+          cp -rf agent-runtime/agent_runtime docker/studio-runtime/agent_runtime
+          rm -rf docker/studio-runtime/jiuwen
+          cp -rf agent-runtime/jiuwen docker/studio-runtime/jiuwen
+          rm -rf docker/studio-runtime/tests
+          cp -rf agent-runtime/tests docker/studio-runtime/tests
+          cp -f agent-runtime/requirements.txt docker/studio-runtime/requirements.txt
+          rm -rf docker/studio-runtime/bin
+          cp -rf docker/studio-runtime/script docker/studio-runtime/bin
+
+      # ======================== Build & Push to GHCR ========================
+
+      - name: Build and push studio-manager to GHCR
+        uses: docker/build-push-action@v6
+        with:
+          context: docker/studio-manager
+          push: true
+          tags: |
+            ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-manager:latest
+            ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-manager:${{ steps.meta.outputs.branch }}
+            ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-manager:${{ steps.meta.outputs.branch }}-${{ steps.meta.outputs.build_date }}-${{ steps.meta.outputs.short_sha }}
+          build-args: BASE_IMAGE=eclipse-temurin:17-jre
+          cache-from: type=gha,scope=studio-manager
+          cache-to: type=gha,scope=studio-manager,mode=max
+
+      - name: Build and push studio-service to GHCR
+        uses: docker/build-push-action@v6
+        with:
+          context: docker/studio-service
+          push: true
+          tags: |
+            ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-service:latest
+            ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-service:${{ steps.meta.outputs.branch }}
+            ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-service:${{ steps.meta.outputs.branch }}-${{ steps.meta.outputs.build_date }}-${{ steps.meta.outputs.short_sha }}
+          build-args: BASE_IMAGE=eclipse-temurin:17-jre
+          cache-from: type=gha,scope=studio-service
+          cache-to: type=gha,scope=studio-service,mode=max
+
+      - name: Build and push studio-console to GHCR
+        uses: docker/build-push-action@v6
+        with:
+          context: docker/studio-console
+          push: true
+          tags: |
+            ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-console:latest
+            ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-console:${{ steps.meta.outputs.branch }}
+            ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-console:${{ steps.meta.outputs.branch }}-${{ steps.meta.outputs.build_date }}-${{ steps.meta.outputs.short_sha }}
+          build-args: BASE_IMAGE=nginx:1.27
+          cache-from: type=gha,scope=studio-console
+          cache-to: type=gha,scope=studio-console,mode=max
+
+      - name: Build and push studio-runtime to GHCR
+        uses: docker/build-push-action@v6
+        with:
+          context: docker/studio-runtime
+          push: true
+          tags: |
+            ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-runtime:latest
+            ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-runtime:${{ steps.meta.outputs.branch }}
+            ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-runtime:${{ steps.meta.outputs.branch }}-${{ steps.meta.outputs.build_date }}-${{ steps.meta.outputs.short_sha }}
+          build-args: BASE_IMAGE=python:3.11-slim
+          cache-from: type=gha,scope=studio-runtime
+          cache-to: type=gha,scope=studio-runtime,mode=max
+
+      # ======================== Push to Docker Hub ========================
+
+      - name: Tag and push studio-manager to Docker Hub
+        continue-on-error: true
+        run: |
+          docker buildx imagetools create \
+            -t ${{ env.DOCKERHUB_PREFIX }}:studio-manager-latest \
+            -t ${{ env.DOCKERHUB_PREFIX }}:studio-manager-${{ steps.meta.outputs.branch }} \
+            -t ${{ env.DOCKERHUB_PREFIX }}:studio-manager-${{ steps.meta.outputs.branch }}-${{ steps.meta.outputs.build_date }}-${{ steps.meta.outputs.short_sha }} \
+            ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-manager:${{ steps.meta.outputs.branch }}
+
+      - name: Tag and push studio-service to Docker Hub
+        continue-on-error: true
+        run: |
+          docker buildx imagetools create \
+            -t ${{ env.DOCKERHUB_PREFIX }}:studio-service-latest \
+            -t ${{ env.DOCKERHUB_PREFIX }}:studio-service-${{ steps.meta.outputs.branch }} \
+            -t ${{ env.DOCKERHUB_PREFIX }}:studio-service-${{ steps.meta.outputs.branch }}-${{ steps.meta.outputs.build_date }}-${{ steps.meta.outputs.short_sha }} \
+            ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-service:${{ steps.meta.outputs.branch }}
+
+      - name: Tag and push studio-console to Docker Hub
+        continue-on-error: true
+        run: |
+          docker buildx imagetools create \
+            -t ${{ env.DOCKERHUB_PREFIX }}:studio-console-latest \
+            -t ${{ env.DOCKERHUB_PREFIX }}:studio-console-${{ steps.meta.outputs.branch }} \
+            -t ${{ env.DOCKERHUB_PREFIX }}:studio-console-${{ steps.meta.outputs.branch }}-${{ steps.meta.outputs.build_date }}-${{ steps.meta.outputs.short_sha }} \
+            ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-console:${{ steps.meta.outputs.branch }}
+
+      - name: Tag and push studio-runtime to Docker Hub
+        continue-on-error: true
+        run: |
+          docker buildx imagetools create \
+            -t ${{ env.DOCKERHUB_PREFIX }}:studio-runtime-latest \
+            -t ${{ env.DOCKERHUB_PREFIX }}:studio-runtime-${{ steps.meta.outputs.branch }} \
+            -t ${{ env.DOCKERHUB_PREFIX }}:studio-runtime-${{ steps.meta.outputs.branch }}-${{ steps.meta.outputs.build_date }}-${{ steps.meta.outputs.short_sha }} \
+            ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-runtime:${{ steps.meta.outputs.branch }}
+
+      - name: Print image summary
+        run: |
+          echo "============================================"
+          echo " Docker images pushed to GHCR & Docker Hub"
+          echo "============================================"
+          echo ""
+          echo "  === GHCR ==="
+          echo "  studio-manager : ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-manager:${{ steps.meta.outputs.branch }}"
+          echo "  studio-service : ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-service:${{ steps.meta.outputs.branch }}"
+          echo "  studio-console : ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-console:${{ steps.meta.outputs.branch }}"
+          echo "  studio-runtime : ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-runtime:${{ steps.meta.outputs.branch }}"
+          echo ""
+          echo "  === Docker Hub ==="
+          echo "  studio-manager : ${{ env.DOCKERHUB_PREFIX }}:studio-manager-${{ steps.meta.outputs.branch }}"
+          echo "  studio-service : ${{ env.DOCKERHUB_PREFIX }}:studio-service-${{ steps.meta.outputs.branch }}"
+          echo "  studio-console : ${{ env.DOCKERHUB_PREFIX }}:studio-console-${{ steps.meta.outputs.branch }}"
+          echo "  studio-runtime : ${{ env.DOCKERHUB_PREFIX }}:studio-runtime-${{ steps.meta.outputs.branch }}"
+          echo ""
+          echo "  Versioned tag  : <service>-${{ steps.meta.outputs.branch }}-${{ steps.meta.outputs.build_date }}-${{ steps.meta.outputs.short_sha }}"
+          echo "============================================"
