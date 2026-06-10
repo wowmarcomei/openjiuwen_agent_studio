@@ -1,0 +1,65 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "java",
+      "name": "Studio Manager (31111)",
+      "request": "launch",
+      "mainClass": "com.openjiuwen.studio.agent.manager.Application",
+      "projectName": "studio-manager",
+      "cwd": "${workspaceFolder}/backend",
+      "env": {
+        "spring_datasource_url": "jdbc:mariadb://localhost:3306/agent-builder?allowMultiQueries=true&useUnicode&characterEncoding=UTF-8&autoReconnect=true&allowPublicKeyRetrieval=true",
+        "spring_datasource_username": "root",
+        "spring_datasource_password": "123456",
+        "redis_host": "localhost",
+        "redis_port": "6379",
+        "obs_url": "http://localhost:9000",
+        "obs_bucket": "agent-builder",
+        "obs_ak": "minioadmin",
+        "obs_sk": "minioadmin",
+        "agent_runtime_endpoint": "http://localhost:31113",
+        "user_auth_endpoint": "http://localhost:31111",
+        "SPRING_PROFILES_ACTIVE": "manager"
+      }
+    },
+    {
+      "type": "java",
+      "name": "Studio Runtime Service (31113)",
+      "request": "launch",
+      "mainClass": "com.openjiuwen.studio.agent.runtime.Application",
+      "projectName": "studio-runtime",
+      "cwd": "${workspaceFolder}/backend",
+      "env": {
+        "spring_datasource_url": "jdbc:mariadb://localhost:3306/agent-builder?allowMultiQueries=true&useUnicode&characterEncoding=UTF-8&autoReconnect=true&allowPublicKeyRetrieval=true",
+        "spring_datasource_username": "root",
+        "spring_datasource_password": "123456",
+        "redis_host": "localhost",
+        "redis_port": "6379",
+        "obs_url": "http://localhost:9000",
+        "obs_bucket": "agent-builder",
+        "obs_ak": "minioadmin",
+        "obs_sk": "minioadmin",
+        "agent_manager_endpoint": "http://localhost:31111",
+        "user_auth_endpoint": "http://localhost:31111",
+        "jiuwen_base_url": "http://localhost:8000",
+        "SPRING_PROFILES_ACTIVE": "runtime"
+      }
+    },
+    {
+      "type": "debugpy",
+      "name": "Python Runtime (8000)",
+      "request": "launch",
+      "module": "agent_runtime.EIStart",
+      "cwd": "${workspaceFolder}/agent-runtime/agent_runtime",
+      "python": "${workspaceFolder}/agent-runtime/.venv/Scripts/python.exe",
+      "envFile": "${workspaceFolder}/agent-runtime/.env",
+      "args": [
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8000"
+      ]
+    }
+  ]
+}
