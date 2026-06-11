@@ -8,6 +8,11 @@ from contextlib import asynccontextmanager
 from agent_runtime.common import settings
 from agent_runtime.common.checkpointer_config import build_redis_checkpointer_config
 from agent_runtime.common.exception.errors import AgentBuilderError
+from agent_runtime.common.logging_context import (
+    COMMON_LOG_FORMAT,
+    install_log_formatter_patch,
+    install_request_id_log_record_factory,
+)
 from agent_runtime.common.redis_manager import RedisClientManager
 from agent_runtime.context.middleware import RequestContextMiddleware
 from agent_runtime.serve.apis.orchestration import execution_app
@@ -33,6 +38,9 @@ from openjiuwen.extensions.sys_operation.sandbox import providers as _  # noqa: 
 
 # 导入 redis checkpointer 模块以触发 @CheckpointerFactory.register("redis") 装饰器
 from openjiuwen.extensions.checkpointer.redis import checkpointer as _  # noqa: F401
+
+install_request_id_log_record_factory()
+install_log_formatter_patch()
 
 prompt_dir = os.path.join(
     os.path.dirname(__file__), "..", "..", "jiuwen", "prompt", "template", "default"
@@ -62,6 +70,7 @@ async def lifespan(app: FastAPI):  # noqa: redefined-outer-name
         {
             "backend": "default",
             "level": "INFO",  # 全局默认级别保持 INFO
+            "format": COMMON_LOG_FORMAT,
             "loggers": {
                 "workflow": {"level": workflow_log_level},
                 "sys_operation": {
