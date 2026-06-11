@@ -5,10 +5,6 @@ on:
     branches:
       - mxh_dev
 
-env:
-  GHCR_REGISTRY: ghcr.io
-  DOCKERHUB_PREFIX: ${{ vars.DOCKERHUB_REPO }}
-
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
@@ -38,15 +34,58 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Resolve image repository config
+        id: image_config
+        shell: bash
+        env:
+          GHCR_IMAGE_REPOSITORY_OVERRIDE: ${{ vars.GHCR_IMAGE_REPOSITORY }}
+          DOCKERHUB_IMAGE_REPOSITORY_OVERRIDE: ${{ vars.DOCKERHUB_IMAGE_REPOSITORY }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          REPOSITORY_LOWER=$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')
+          GHCR_IMAGE_REPOSITORY="${GHCR_IMAGE_REPOSITORY_OVERRIDE:-ghcr.io/${REPOSITORY_LOWER}}"
+          DOCKERHUB_IMAGE_REPOSITORY="${DOCKERHUB_IMAGE_REPOSITORY_OVERRIDE:-${GHCR_IMAGE_REPOSITORY#ghcr.io/}}"
+          IMAGE_TAG="latest"
+          GHCR_REGISTRY="${GHCR_IMAGE_REPOSITORY%%/*}"
+
+          if [ "$GHCR_REGISTRY" = "$GHCR_IMAGE_REPOSITORY" ]; then
+            echo "GHCR_IMAGE_REPOSITORY must include a registry host, for example registry-host/owner/repo" >&2
+            exit 1
+          fi
+
+          DOCKERHUB_ENABLED=false
+          if [ -n "${DOCKERHUB_USERNAME}" ] && [ -n "${DOCKERHUB_TOKEN}" ]; then
+            if curl -fsS "https://hub.docker.com/v2/repositories/${DOCKERHUB_IMAGE_REPOSITORY}/" >/dev/null; then
+              DOCKERHUB_ENABLED=true
+            else
+              echo "Docker Hub repository ${DOCKERHUB_IMAGE_REPOSITORY} was not found or is not accessible; Docker Hub push will be skipped."
+            fi
+          else
+            echo "Docker Hub credentials are not configured; Docker Hub push will be skipped."
+          fi
+
+          echo "ghcr_registry=${GHCR_REGISTRY}" >> "$GITHUB_OUTPUT"
+          echo "ghcr_repository=${GHCR_IMAGE_REPOSITORY}" >> "$GITHUB_OUTPUT"
+          echo "dockerhub_repository=${DOCKERHUB_IMAGE_REPOSITORY}" >> "$GITHUB_OUTPUT"
+          echo "dockerhub_enabled=${DOCKERHUB_ENABLED}" >> "$GITHUB_OUTPUT"
+          echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "GHCR repository: ${GHCR_IMAGE_REPOSITORY}"
+          echo "Docker Hub repository: ${DOCKERHUB_IMAGE_REPOSITORY}"
+          echo "Docker Hub enabled: ${DOCKERHUB_ENABLED}"
+          echo "Default image tag: ${IMAGE_TAG}"
+
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ steps.image_config.outputs.ghcr_registry }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Login to Docker Hub
-        continue-on-error: true
+        if: steps.image_config.outputs.dockerhub_enabled == 'true'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -58,14 +97,10 @@ jobs:
           BRANCH_NAME=$(echo "${GITHUB_REF_NAME}" | sed 's/[^a-zA-Z0-9._-]/-/g')
           SHORT_SHA=$(echo "${GITHUB_SHA}" | cut -c1-7)
           BUILD_DATE=$(date +"%Y%m%d")
-          REPO_NAME=$(echo "${{ github.event.repository.name }}" | tr '_' '-' | tr '[:upper:]' '[:lower:]')
-          GHCR_PREFIX="${{ github.repository_owner }}/${REPO_NAME}"
           echo "branch=${BRANCH_NAME}" >> "$GITHUB_OUTPUT"
           echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
           echo "build_date=${BUILD_DATE}" >> "$GITHUB_OUTPUT"
-          echo "ghcr_prefix=${GHCR_PREFIX}" >> "$GITHUB_OUTPUT"
           echo "Branch: ${BRANCH_NAME}, SHA: ${SHORT_SHA}, Date: ${BUILD_DATE}"
-          echo "GHCR_PREFIX: ${GHCR_PREFIX}"
 
       # ======================== Backend Build ========================
 
@@ -101,8 +136,6 @@ jobs:
       - name: Build frontend with pnpm
         run: |
           cd frontend
-          mkdir -p .staging
-          cp src/index.html .staging/index.html
           pnpm install --no-frozen-lockfile
           NODE_OPTIONS="--max-old-space-size=4096" pnpm run build
           cd ..
@@ -130,9 +163,9 @@ jobs:
           context: docker/studio-manager
           push: true
           tags: |
-            ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-manager:latest
-            ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-manager:${{ steps.meta.outputs.branch }}
-            ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-manager:${{ steps.meta.outputs.branch }}-${{ steps.meta.outputs.build_date }}-${{ steps.meta.outputs.short_sha }}
+            ${{ steps.image_config.outputs.ghcr_repository }}/studio-manager:${{ steps.image_config.outputs.image_tag }}
+            ${{ steps.image_config.outputs.ghcr_repository }}/studio-manager:${{ steps.meta.outputs.branch }}
+            ${{ steps.image_config.outputs.ghcr_repository }}/studio-manager:${{ steps.meta.outputs.branch }}-${{ steps.meta.outputs.build_date }}-${{ steps.meta.outputs.short_sha }}
           build-args: BASE_IMAGE=eclipse-temurin:17-jre
           cache-from: type=gha,scope=studio-manager
           cache-to: type=gha,scope=studio-manager,mode=max
@@ -143,9 +176,9 @@ jobs:
           context: docker/studio-service
           push: true
           tags: |
-            ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-service:latest
-            ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-service:${{ steps.meta.outputs.branch }}
-            ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-service:${{ steps.meta.outputs.branch }}-${{ steps.meta.outputs.build_date }}-${{ steps.meta.outputs.short_sha }}
+            ${{ steps.image_config.outputs.ghcr_repository }}/studio-service:${{ steps.image_config.outputs.image_tag }}
+            ${{ steps.image_config.outputs.ghcr_repository }}/studio-service:${{ steps.meta.outputs.branch }}
+            ${{ steps.image_config.outputs.ghcr_repository }}/studio-service:${{ steps.meta.outputs.branch }}-${{ steps.meta.outputs.build_date }}-${{ steps.meta.outputs.short_sha }}
           build-args: BASE_IMAGE=eclipse-temurin:17-jre
           cache-from: type=gha,scope=studio-service
           cache-to: type=gha,scope=studio-service,mode=max
@@ -156,9 +189,9 @@ jobs:
           context: docker/studio-console
           push: true
           tags: |
-            ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-console:latest
-            ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-console:${{ steps.meta.outputs.branch }}
-            ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-console:${{ steps.meta.outputs.branch }}-${{ steps.meta.outputs.build_date }}-${{ steps.meta.outputs.short_sha }}
+            ${{ steps.image_config.outputs.ghcr_repository }}/studio-console:${{ steps.image_config.outputs.image_tag }}
+            ${{ steps.image_config.outputs.ghcr_repository }}/studio-console:${{ steps.meta.outputs.branch }}
+            ${{ steps.image_config.outputs.ghcr_repository }}/studio-console:${{ steps.meta.outputs.branch }}-${{ steps.meta.outputs.build_date }}-${{ steps.meta.outputs.short_sha }}
           build-args: BASE_IMAGE=nginx:1.27
           cache-from: type=gha,scope=studio-console
           cache-to: type=gha,scope=studio-console,mode=max
@@ -169,9 +202,9 @@ jobs:
           context: docker/studio-runtime
           push: true
           tags: |
-            ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-runtime:latest
-            ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-runtime:${{ steps.meta.outputs.branch }}
-            ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-runtime:${{ steps.meta.outputs.branch }}-${{ steps.meta.outputs.build_date }}-${{ steps.meta.outputs.short_sha }}
+            ${{ steps.image_config.outputs.ghcr_repository }}/studio-runtime:${{ steps.image_config.outputs.image_tag }}
+            ${{ steps.image_config.outputs.ghcr_repository }}/studio-runtime:${{ steps.meta.outputs.branch }}
+            ${{ steps.image_config.outputs.ghcr_repository }}/studio-runtime:${{ steps.meta.outputs.branch }}-${{ steps.meta.outputs.build_date }}-${{ steps.meta.outputs.short_sha }}
           build-args: BASE_IMAGE=python:3.11-slim
           cache-from: type=gha,scope=studio-runtime
           cache-to: type=gha,scope=studio-runtime,mode=max
@@ -179,58 +212,64 @@ jobs:
       # ======================== Push to Docker Hub ========================
 
       - name: Tag and push studio-manager to Docker Hub
-        continue-on-error: true
+        if: steps.image_config.outputs.dockerhub_enabled == 'true'
         run: |
           docker buildx imagetools create \
-            -t ${{ env.DOCKERHUB_PREFIX }}:studio-manager-latest \
-            -t ${{ env.DOCKERHUB_PREFIX }}:studio-manager-${{ steps.meta.outputs.branch }} \
-            -t ${{ env.DOCKERHUB_PREFIX }}:studio-manager-${{ steps.meta.outputs.branch }}-${{ steps.meta.outputs.build_date }}-${{ steps.meta.outputs.short_sha }} \
-            ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-manager:${{ steps.meta.outputs.branch }}
+            -t ${{ steps.image_config.outputs.dockerhub_repository }}:studio-manager-${{ steps.image_config.outputs.image_tag }} \
+            -t ${{ steps.image_config.outputs.dockerhub_repository }}:studio-manager-${{ steps.meta.outputs.branch }} \
+            -t ${{ steps.image_config.outputs.dockerhub_repository }}:studio-manager-${{ steps.meta.outputs.branch }}-${{ steps.meta.outputs.build_date }}-${{ steps.meta.outputs.short_sha }} \
+            ${{ steps.image_config.outputs.ghcr_repository }}/studio-manager:${{ steps.meta.outputs.branch }}
 
       - name: Tag and push studio-service to Docker Hub
-        continue-on-error: true
+        if: steps.image_config.outputs.dockerhub_enabled == 'true'
         run: |
           docker buildx imagetools create \
-            -t ${{ env.DOCKERHUB_PREFIX }}:studio-service-latest \
-            -t ${{ env.DOCKERHUB_PREFIX }}:studio-service-${{ steps.meta.outputs.branch }} \
-            -t ${{ env.DOCKERHUB_PREFIX }}:studio-service-${{ steps.meta.outputs.branch }}-${{ steps.meta.outputs.build_date }}-${{ steps.meta.outputs.short_sha }} \
-            ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-service:${{ steps.meta.outputs.branch }}
+            -t ${{ steps.image_config.outputs.dockerhub_repository }}:studio-service-${{ steps.image_config.outputs.image_tag }} \
+            -t ${{ steps.image_config.outputs.dockerhub_repository }}:studio-service-${{ steps.meta.outputs.branch }} \
+            -t ${{ steps.image_config.outputs.dockerhub_repository }}:studio-service-${{ steps.meta.outputs.branch }}-${{ steps.meta.outputs.build_date }}-${{ steps.meta.outputs.short_sha }} \
+            ${{ steps.image_config.outputs.ghcr_repository }}/studio-service:${{ steps.meta.outputs.branch }}
 
       - name: Tag and push studio-console to Docker Hub
-        continue-on-error: true
+        if: steps.image_config.outputs.dockerhub_enabled == 'true'
         run: |
           docker buildx imagetools create \
-            -t ${{ env.DOCKERHUB_PREFIX }}:studio-console-latest \
-            -t ${{ env.DOCKERHUB_PREFIX }}:studio-console-${{ steps.meta.outputs.branch }} \
-            -t ${{ env.DOCKERHUB_PREFIX }}:studio-console-${{ steps.meta.outputs.branch }}-${{ steps.meta.outputs.build_date }}-${{ steps.meta.outputs.short_sha }} \
-            ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-console:${{ steps.meta.outputs.branch }}
+            -t ${{ steps.image_config.outputs.dockerhub_repository }}:studio-console-${{ steps.image_config.outputs.image_tag }} \
+            -t ${{ steps.image_config.outputs.dockerhub_repository }}:studio-console-${{ steps.meta.outputs.branch }} \
+            -t ${{ steps.image_config.outputs.dockerhub_repository }}:studio-console-${{ steps.meta.outputs.branch }}-${{ steps.meta.outputs.build_date }}-${{ steps.meta.outputs.short_sha }} \
+            ${{ steps.image_config.outputs.ghcr_repository }}/studio-console:${{ steps.meta.outputs.branch }}
 
       - name: Tag and push studio-runtime to Docker Hub
-        continue-on-error: true
+        if: steps.image_config.outputs.dockerhub_enabled == 'true'
         run: |
           docker buildx imagetools create \
-            -t ${{ env.DOCKERHUB_PREFIX }}:studio-runtime-latest \
-            -t ${{ env.DOCKERHUB_PREFIX }}:studio-runtime-${{ steps.meta.outputs.branch }} \
-            -t ${{ env.DOCKERHUB_PREFIX }}:studio-runtime-${{ steps.meta.outputs.branch }}-${{ steps.meta.outputs.build_date }}-${{ steps.meta.outputs.short_sha }} \
-            ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-runtime:${{ steps.meta.outputs.branch }}
+            -t ${{ steps.image_config.outputs.dockerhub_repository }}:studio-runtime-${{ steps.image_config.outputs.image_tag }} \
+            -t ${{ steps.image_config.outputs.dockerhub_repository }}:studio-runtime-${{ steps.meta.outputs.branch }} \
+            -t ${{ steps.image_config.outputs.dockerhub_repository }}:studio-runtime-${{ steps.meta.outputs.branch }}-${{ steps.meta.outputs.build_date }}-${{ steps.meta.outputs.short_sha }} \
+            ${{ steps.image_config.outputs.ghcr_repository }}/studio-runtime:${{ steps.meta.outputs.branch }}
 
       - name: Print image summary
+        env:
+          DOCKERHUB_ENABLED: ${{ steps.image_config.outputs.dockerhub_enabled }}
         run: |
           echo "============================================"
-          echo " Docker images pushed to GHCR & Docker Hub"
+          echo " Docker image publish summary"
           echo "============================================"
           echo ""
           echo "  === GHCR ==="
-          echo "  studio-manager : ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-manager:${{ steps.meta.outputs.branch }}"
-          echo "  studio-service : ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-service:${{ steps.meta.outputs.branch }}"
-          echo "  studio-console : ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-console:${{ steps.meta.outputs.branch }}"
-          echo "  studio-runtime : ${{ env.GHCR_REGISTRY }}/${{ steps.meta.outputs.ghcr_prefix }}/studio-runtime:${{ steps.meta.outputs.branch }}"
+          echo "  studio-manager : ${{ steps.image_config.outputs.ghcr_repository }}/studio-manager:${{ steps.meta.outputs.branch }}"
+          echo "  studio-service : ${{ steps.image_config.outputs.ghcr_repository }}/studio-service:${{ steps.meta.outputs.branch }}"
+          echo "  studio-console : ${{ steps.image_config.outputs.ghcr_repository }}/studio-console:${{ steps.meta.outputs.branch }}"
+          echo "  studio-runtime : ${{ steps.image_config.outputs.ghcr_repository }}/studio-runtime:${{ steps.meta.outputs.branch }}"
           echo ""
           echo "  === Docker Hub ==="
-          echo "  studio-manager : ${{ env.DOCKERHUB_PREFIX }}:studio-manager-${{ steps.meta.outputs.branch }}"
-          echo "  studio-service : ${{ env.DOCKERHUB_PREFIX }}:studio-service-${{ steps.meta.outputs.branch }}"
-          echo "  studio-console : ${{ env.DOCKERHUB_PREFIX }}:studio-console-${{ steps.meta.outputs.branch }}"
-          echo "  studio-runtime : ${{ env.DOCKERHUB_PREFIX }}:studio-runtime-${{ steps.meta.outputs.branch }}"
+          if [ "${DOCKERHUB_ENABLED}" = "true" ]; then
+            echo "  studio-manager : ${{ steps.image_config.outputs.dockerhub_repository }}:studio-manager-${{ steps.meta.outputs.branch }}"
+            echo "  studio-service : ${{ steps.image_config.outputs.dockerhub_repository }}:studio-service-${{ steps.meta.outputs.branch }}"
+            echo "  studio-console : ${{ steps.image_config.outputs.dockerhub_repository }}:studio-console-${{ steps.meta.outputs.branch }}"
+            echo "  studio-runtime : ${{ steps.image_config.outputs.dockerhub_repository }}:studio-runtime-${{ steps.meta.outputs.branch }}"
+          else
+            echo "  skipped: repository missing/inaccessible or Docker Hub credentials not configured"
+          fi
           echo ""
           echo "  Versioned tag  : <service>-${{ steps.meta.outputs.branch }}-${{ steps.meta.outputs.build_date }}-${{ steps.meta.outputs.short_sha }}"
           echo "============================================"

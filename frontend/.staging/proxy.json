@@ -1,18 +1,14 @@
 {
   "/v1": {
-    "target": "",
+    "target": "http://localhost",
     "changeOrigin": true,
-    "pathRewrite": {
-      "/v1": ""
-    },
+    "ws": true,
     "secure": false
   },
   "/v2": {
-    "target": "",
+    "target": "http://localhost",
     "changeOrigin": true,
-    "pathRewrite": {
-      "/v2": ""
-    },
+    "ws": true,
     "secure": false
   }
 }

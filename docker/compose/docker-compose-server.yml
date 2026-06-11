@@ -79,7 +79,7 @@ services:
 
   studio-console:
     image: ${STUDIO_CONSOLE_IMAGE}
-    pull_policy: always
+    pull_policy: ${APP_IMAGE_PULL_POLICY:-always}
     privileged: true
     restart: always
     cpus: 0.5
@@ -89,15 +89,18 @@ services:
     ports:
       - '${HTTP_PORT:-80}:80'
     depends_on:
-      - studio-manager
-      - studio-service
-      - studio-runtime
+      studio-manager:
+        condition: service_healthy
+      studio-service:
+        condition: service_healthy
+      studio-runtime:
+        condition: service_healthy
     networks:
       - agent-net
 
   studio-manager:
     image: ${STUDIO_MANAGER_IMAGE}
-    pull_policy: always
+    pull_policy: ${APP_IMAGE_PULL_POLICY:-always}
     restart: always
     privileged: true
     cpus: 2
@@ -130,12 +133,18 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/31111'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
     networks:
       - agent-net
 
   studio-service:
     image: ${STUDIO_SERVICE_IMAGE}
-    pull_policy: always
+    pull_policy: ${APP_IMAGE_PULL_POLICY:-always}
     restart: always
     privileged: true
     cpus: 2
@@ -171,12 +180,20 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      studio-manager:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/31113'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
     networks:
       - agent-net
 
   studio-runtime:
     image: ${STUDIO_RUNTIME_IMAGE}
-    pull_policy: always
+    pull_policy: ${APP_IMAGE_PULL_POLICY:-always}
     restart: always
     privileged: true
     cpus: 2
@@ -211,6 +228,14 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      studio-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/31014'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
     networks:
       - agent-net
 
