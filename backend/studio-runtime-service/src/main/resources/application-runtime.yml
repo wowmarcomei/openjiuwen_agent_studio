@@ -50,6 +50,7 @@ spring:
       initialization-fail-timeout: -1  # 禁用启动时的连接检查
   sql:
     init:
+      encoding: UTF-8
       schema-locations: classpath:sql/init.sql
       data-locations: classpath:sql/init_data.sql
       mode: ${spring_sql_init_mode:always}
@@ -210,7 +211,7 @@ feign:
       iamManager:
         url: ${iam_manager_endpoint:http://mock-iam-manager:8080}
       agentManager:
-        url: ${agent_manager_endpoint:http://mock-agent-manager:8080}
+        url: ${agent_manager_endpoint:http://127.0.0.1:31111}
       agentBaseRuntime:
         url: ${agent_base_runtime_endpoint:http://mock-agent-base-runtime:8080}
       kooSearch:
@@ -219,8 +220,6 @@ feign:
         url: ${jiuwen_base_url:http://mock-jiuwen:8080}
       modelManager:
         url: ${model_manager_endpoint:http://mock-model-manager:8080}
-      memoryService:
-        url: ${agent_memory_service_endpoint:http://mock-memory-service:8080}
       ocrClient:
         url: ${ocr_endpoint:http://mock-ocr:8080}
       sisClient:

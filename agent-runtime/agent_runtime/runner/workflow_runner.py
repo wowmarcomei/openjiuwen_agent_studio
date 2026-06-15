@@ -22,7 +22,7 @@ from agent_runtime.schemas.orchestration_mgr import (
 )
 from jiuwen.serve.controllers.execution.ir_converter import IRConverter
 from jiuwen.serve.controllers.execution.open_utils import async_ir_load
-from openjiuwen.core.common.exception.errors import WorkflowError
+from openjiuwen.core.common.exception.errors import ExecutionError, Termination
 from openjiuwen.core.common.logging import workflow_logger
 from openjiuwen.core.session.checkpointer.checkpointer import CheckpointerFactory
 from openjiuwen.core.session.interaction.interactive_input import InteractiveInput
@@ -179,7 +179,7 @@ class WorkflowRunner:
             # 首次执行：使用普通 query 输入
             inputs = {
                 "query": req.query or "",
-                **self._build_global_state_params(req.params.model_dump()),
+                **self._build_global_state_params(req.params.model_dump(), node_defs),
             }
             # 保存 exec_id 到 Redis，以便中断恢复时使用
             t_redis_save = time.time()
@@ -191,6 +191,21 @@ class WorkflowRunner:
         workflow_logger.info(
             f"[PERF] Inputs build + Redis ops: {(time.time() - t_inputs_build) * 1000:.1f}ms"
         )
+
+        # 5.1 记忆检索：在工作流执行前检索相关记忆
+        if not is_resuming:
+            enable_memory_retrieve = inputs.get("enable_memory_retrieve", False)
+            memory_repo_id = (
+                (ir_json.get("configs") or {}).get("memory") or {}
+            ).get("memory_repo_id", "")
+            if enable_memory_retrieve and req.user_id and memory_repo_id:
+                memory_message = await self._retrieve_memory(
+                    user_id=req.user_id,
+                    scope_id=memory_repo_id,
+                    query=req.query or "",
+                )
+                if memory_message is not None:
+                    inputs["memory_message"] = memory_message
 
         workflow_logger.info(
             f"[PERF] === PRE-EXEC TOTAL: {(time.time() - perf_start) * 1000:.1f}ms ==="
@@ -216,6 +231,9 @@ class WorkflowRunner:
 
         # 7. 执行工作流
         t_stream_start = time.time()
+        workflow_wrapper = None
+        # Collect assistant response for memory extraction
+        memory_response_parts: list[str] = []
         try:
             is_debug = req.params.is_debug
             stream_modes = [BaseStreamMode.OUTPUT, BaseStreamMode.CUSTOM]
@@ -245,24 +263,80 @@ class WorkflowRunner:
                 for event in workflow_wrapper.wrap_stream_data(
                     chunk, is_resuming=is_resuming
                 ):
+                    # Collect response text for memory extraction
+                    evt_type = event.get("event", "")
+                    if evt_type in ("message", "done"):
+                        answer = event.get("data", {}).get("answer", "")
+                        if answer:
+                            memory_response_parts.append(answer)
                     yield event
             workflow_logger.info(
                 f"[PERF] Workflow.stream() total: {(time.time() - t_stream_start) * 1000:.1f}ms"
             )
             workflow_logger.info(f"[PERF] Total chunks yielded: {chunk_count}")
-        except WorkflowError as e:
+
+            # Trigger memory extraction after successful workflow execution
+            await self._trigger_memory_extraction(
+                ir_json=ir_json,
+                user_id=req.user_id,
+                conversation_id=req.conversation_id,
+                user_query=req.query or "",
+                assistant_response="".join(memory_response_parts),
+            )
+        except Termination:
+            raise
+        except ExecutionError as e:
+            last_node = workflow_wrapper.get_last_node()
+            node_id = last_node.get("node_id", "")
+            node_type = last_node.get("node_type", "")
+            node_name = _resolve_node_name(node_defs, workflow_id, node_id)
+            error_code = e.code
+            error_msg = _format_error_message(error_code, e.message)
             yield {
                 "event": "error",
-                "data": {"code": GENERAL_ERROR, "message": str(e.message)},
+                "data": {
+                    "code": error_code,
+                    "message": error_msg,
+                    "node_id": node_id,
+                    "node_name": node_name,
+                    "node_type": node_type,
+                    "workflow_id": workflow_id,
+                    "workflow_name": ir_json.get("workflowName", ""),
+                },
+                "executionId": exec_id,
+                "index": 0,
+                "createdTime": int(time.time()),
+            }
+            yield {
+                "event": "done",
+                "data": {
+                    "node_id": node_id,
+                    "node_name": node_name,
+                    "node_type": node_type,
+                },
                 "executionId": exec_id,
                 "index": 0,
                 "createdTime": int(time.time()),
             }
         except Exception as e:
-            workflow_logger.error(f"Workflow execution failed: {e}", exc_info=True)
+            workflow_logger.error(f"Workflow execution failed: {e}, type={type(e).__name__}", exc_info=True)
+            last_node = workflow_wrapper.get_last_node() if workflow_wrapper else {}
+            node_id = last_node.get("node_id", "")
+            node_type = last_node.get("node_type", "")
+            node_name = _resolve_node_name(node_defs, workflow_id, node_id)
+            error_code = GENERAL_ERROR
+            error_msg = _format_error_message(error_code, "Workflow execution failed")
             yield {
                 "event": "error",
-                "data": {"code": GENERAL_ERROR, "message": "Workflow execution failed"},
+                "data": {
+                    "code": error_code,
+                    "message": error_msg,
+                    "node_id": node_id,
+                    "node_name": node_name,
+                    "node_type": node_type,
+                    "workflow_id": workflow_id,
+                    "workflow_name": ir_json.get("workflowName", ""),
+                },
                 "executionId": exec_id,
                 "index": 0,
                 "createdTime": int(time.time()),
@@ -378,7 +452,7 @@ class WorkflowRunner:
         for event in formatter.finalize():
             yield event
 
-    def _build_global_state_params(self, params: dict) -> dict:
+    def _build_global_state_params(self, params: dict, node_defs: dict) -> dict:
         """构建需要通过 inputs → commit_user_inputs() 写入 global_state 的参数。
 
         这些参数同时存在于 envs（由 _build_envs 生成），但 envs 不被 checkpoint 保存。
@@ -417,4 +491,159 @@ class WorkflowRunner:
         if "environment_variables" in params:
             result["_env"] = params["environment_variables"]
 
+        if node_defs:
+            result["__node_defs__"] = node_defs
+
         return result
+
+
+    async def _retrieve_memory(
+        self,
+        user_id: str,
+        scope_id: str,
+        query: str,
+    ):
+        """Retrieve relevant memories from LTM and return a formatted HumanMessage.
+
+        Returns a HumanMessage containing formatted memory content, or None if
+        no memories were found or retrieval failed.
+        """
+        try:
+            from agent_runtime.memory.adapter.ltm_manager import get_ltm
+            from jiuwen.common.llm_service.messages import HumanMessage
+            from jiuwen.context.memory_engine.prompt.memory_usage import MEMORY_USAGE_PROMPT
+
+            ltm = get_ltm()
+            if ltm is None:
+                workflow_logger.warning("LTM not initialized, skipping memory retrieval")
+                return None
+
+            has_mem = False
+            memory_content = ""
+
+            search_mems = await ltm.search_user_mem(
+                query=query, num=20, user_id=user_id.lower(), scope_id=scope_id
+            )
+            for mem in search_mems:
+                if mem is None:
+                    continue
+                mem_content = (
+                    mem.mem_info.content
+                    if hasattr(mem, "mem_info")
+                    else mem.get("mem", "")
+                )
+                if mem_content:
+                    memory_content += f"<mem>{mem_content}</mem>\n"
+                    has_mem = True
+
+            search_summary_mems = await ltm.search_user_history_summary(
+                query=query, num=5, user_id=user_id.lower(), scope_id=scope_id
+            )
+            for mem in search_summary_mems:
+                if mem is None:
+                    continue
+                mem_content = (
+                    mem.mem_info.content
+                    if hasattr(mem, "mem_info")
+                    else mem.get("mem", "")
+                )
+                if mem_content:
+                    memory_content += (
+                        f"<history_summary>{mem_content}</history_summary>\n"
+                    )
+                    has_mem = True
+
+            if not has_mem:
+                workflow_logger.info(
+                    "No memory found for user=%s, scope=%s, query=%s",
+                    user_id,
+                    scope_id,
+                    query[:50],
+                )
+                return None
+
+            msg = MEMORY_USAGE_PROMPT.replace("MEMORY_CONTENT", memory_content)
+            workflow_logger.info(
+                "Memory retrieved for user=%s, scope=%s, mem_count=%d",
+                user_id,
+                scope_id,
+                sum(1 for m in search_mems if m is not None)
+                + sum(1 for m in search_summary_mems if m is not None),
+            )
+            return HumanMessage(content=msg)
+
+        except Exception as e:
+            workflow_logger.warning(
+                "Failed to retrieve memory: %s", e, exc_info=True
+            )
+            return None
+
+    async def _trigger_memory_extraction(
+        self,
+        ir_json: dict,
+        user_id: str,
+        conversation_id: str,
+        user_query: str,
+        assistant_response: str,
+    ) -> None:
+        """Trigger memory extraction after workflow execution if memory is configured.
+
+        Checks if the IR has memory config with memory_repo_id and strategies,
+        and if so, calls the UserProfileMemoryExtractor to cache the conversation
+        turn for later extraction (based on conversation_round / time_span triggers).
+        """
+        try:
+            configs = ir_json.get("configs") or {}
+            memory_config = configs.get("memory") or {}
+            memory_repo_id = memory_config.get("memory_repo_id")
+            strategies = memory_config.get("strategies") or []
+
+            if not memory_repo_id or not strategies:
+                return
+
+            if not user_query and not assistant_response:
+                return
+
+            from openjiuwen.core.foundation.llm import UserMessage, AssistantMessage
+            from memory.storage.memory_extractor import get_instance
+
+            messages = []
+            if user_query:
+                messages.append(UserMessage(content=user_query))
+            if assistant_response:
+                messages.append(AssistantMessage(content=assistant_response))
+
+            if not messages:
+                return
+
+            extractor = get_instance()
+            await extractor.async_add_chat_turn(
+                user_id=user_id,
+                memory_repo_id=memory_repo_id,
+                conversation_id=conversation_id,
+                ir_data=ir_json,
+                messages=messages,
+            )
+            workflow_logger.info(
+                "Memory extraction triggered for repo=%s, user=%s, conversation=%s",
+                memory_repo_id,
+                user_id,
+                conversation_id,
+            )
+        except Exception as e:
+            workflow_logger.warning(
+                "Failed to trigger memory extraction: %s", e, exc_info=True
+            )
+
+
+def _resolve_node_name(node_defs: dict, workflow_id: str, node_id: str) -> str:
+    if not node_defs or not node_id:
+        return node_id
+    wf_defs = node_defs.get(workflow_id, {})
+    node_info = wf_defs.get(node_id, {})
+    return node_info.get("node_name", node_id) if isinstance(node_info, dict) else node_id
+
+
+def _format_error_message(code: int, raw_message: str) -> str:
+    from jiuwen.orchestration.flow.constant import WORKFLOW_UNIFIED_ERROR_INFORMATION_UNSAFE
+    return WORKFLOW_UNIFIED_ERROR_INFORMATION_UNSAFE.format(code, raw_message)

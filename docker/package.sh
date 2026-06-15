@@ -30,8 +30,9 @@ function main() {
   log "[3/3] studio-runtime 源码复制"
   runtime_copy
   log "[3/3] studio-runtime 源码复制完成"
-
-  log "构建打包全部完成"
+#  默认编译和构建在同一环境执行，跳过清理步骤。若编译与构建跨环境（如构建环境不具备安装docker的环境），需放开以下步骤，将编译产物打成压缩包并清理中间文件
+#  package_clean
+#  log "构建打包全部完成"
 }
 
 function package_clean() {
@@ -61,7 +62,7 @@ function frontend_build_copy() {
   CONSOLE_TARGET_PATH=${WORKSPACE}/docker/studio-console
 
   echo "[PACKAGE] 安装 pnpm..."
-  npm install -g pnpm@8.13.1 --registry=${NPM_CENTRAL_REPO}
+  npm install -g pnpm --registry=${NPM_CENTRAL_REPO}
 
   echo "[PACKAGE] 安装前端依赖 (pnpm install)..."
   pnpm install --ignore-scripts
@@ -140,7 +141,7 @@ function package() {
   if [ -f "package.tar.gz" ]; then
       rm -f "package.tar.gz"
   fi
-  tar -czvf package.tar.gz ./compose ./k8s ./studio-manager ./studio-service ./studio-runtime ./studio-console ./build.sh ./init.sql
+  tar -czvf package.tar.gz ./compose ./k8s ./studio-manager ./studio-service ./studio-runtime ./studio-console ./build.sh
 }
 
 function clean() {

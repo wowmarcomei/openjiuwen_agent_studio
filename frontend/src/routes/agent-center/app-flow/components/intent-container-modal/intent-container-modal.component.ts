@@ -88,9 +88,6 @@ export class IntentContainerModalComponent
     closeDrawer?: () => void;
   } = {};
 
-  @ViewChild('batchBindRef')
-  batchBindRef: any;
-
   @ViewChild('inputForm') inputForm: NgForm;
 
   @ViewChildren('boundFlowListForm') boundFlowListForm: QueryList<NgForm>;
@@ -126,9 +123,6 @@ export class IntentContainerModalComponent
   public isLoading = false;
 
   public isFlowsLoading = false;
-
-  // 批量绑定工作流的Tip弹窗
-  public batchBindRefCmp = batchBindFlowsComponent;
 
   public inputParams: IWorkflowField[] = [];
 
@@ -169,8 +163,9 @@ export class IntentContainerModalComponent
           selectedBranches.forEach((param) => {
             param.workflow_id = flowId;
           });
+          this.showBatchBindRef = false;
+          this.cdr.markForCheck();
         }
-        this.showBatchBindRef = false;
       },
     },
   };
@@ -191,10 +186,12 @@ export class IntentContainerModalComponent
           ) ?? []
         );
         this.isFlowListLoading = false;
+        this.cdr.markForCheck();
       })
       .catch(() => {
         this.flowSelecServe.updateFlowList([]);
         this.isFlowListLoading = false;
+        this.cdr.markForCheck();
       });
   }
 
@@ -210,10 +207,12 @@ export class IntentContainerModalComponent
           ) ?? []
         );
         this.isFlowListLoading = false;
+        this.cdr.markForCheck();
       })
       .catch(() => {
         this.flowSelecServe.updateFlowList([]);
         this.isFlowListLoading = false;
+        this.cdr.markForCheck();
       });
   }
 
@@ -233,9 +232,11 @@ export class IntentContainerModalComponent
         );
         this.flowSelecServe.updateFlowList(merged);
         this.isFlowListLoading = false;
+        this.cdr.markForCheck();
       })
       .catch(() => {
         this.isFlowListLoading = false;
+        this.cdr.markForCheck();
       });
   }
 
@@ -341,6 +342,24 @@ export class IntentContainerModalComponent
 
     this.flowSelecServe.flowIdSetter = this.workflowId;
     this.flowSelecServe.flowTypeSetter = this.workflowType;
+
+    this.isFlowListLoading = true;
+    this.appFlowRepoServe
+      .getPublishedFlows({ offset: 0, limit: LAZY_LOAD_LIMIT })
+      .then(result => {
+        this.flowSelecServe.updateFlowList(
+          result?.workflow_version_list.filter(
+            (item) => item.workflow_id !== this.workflowId,
+          ) ?? []
+        );
+        this.isFlowListLoading = false;
+        this.cdr.markForCheck();
+      })
+      .catch(() => {
+        this.flowSelecServe.updateFlowList([]);
+        this.isFlowListLoading = false;
+        this.cdr.markForCheck();
+      });
   }
 
   override ngOnDestroy() {
@@ -402,14 +421,9 @@ export class IntentContainerModalComponent
     return this.branchList.some((item) => item.selected);
   }
 
-  /** 点击展示批量配置的Tip弹窗 */
-  public batchBindFlows() {
-    if (this.showBatchBindRef) {
-      this.showBatchBindRef = false;
-    } else {
-      this.showBatchBindRef = true;
-      this.batchBindTipCtx.workflowType = this.workflowType;
-    }
+  public openBatchBindModal(): void {
+    this.showBatchBindRef = true;
+    this.batchBindTipCtx.workflowType = this.workflowType;
   }
 
   public batchUnbindFlows() {

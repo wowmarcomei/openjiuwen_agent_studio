@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter } from '@angular/core';
+import { Component, Input, Output, EventEmitter, ChangeDetectorRef } from '@angular/core';
 import { ClickOutsideDirective } from '@shared/directives/click-outside.directive';
 import { MODULES } from '@shared/modules';
 import { AppFlowRepoService } from '@services/agent-center/app-flow-repo.service';
@@ -42,7 +42,6 @@ import { LAZY_LOAD_LIMIT } from '@routes/agent-center/app-flow/flow.const';
           type="button"
           nz-button
           nzType="primary"
-          nzDanger
           [disabled]="!flowSelected"
           (click)="onConfirm()"
         >
@@ -83,6 +82,7 @@ export class batchBindFlowsComponent extends PublishedFlowSelectBaseComponent {
     protected override appFlowRepoServe: AppFlowRepoService,
     protected override i18n: I18NextEagerPipe,
     private route: ActivatedRoute,
+    private cdr: ChangeDetectorRef,
   ) {
     super(appFlowRepoServe, i18n);
 
@@ -112,10 +112,12 @@ export class batchBindFlowsComponent extends PublishedFlowSelectBaseComponent {
           (item) => item.workflow_id !== this.workflowId,
         );
         this.isLoading = false;
+        this.cdr.detectChanges();
       })
       .catch(() => {
         (this as any).flowList = [];
         this.isLoading = false;
+        this.cdr.detectChanges();
       });
   }
 
@@ -129,10 +131,12 @@ export class batchBindFlowsComponent extends PublishedFlowSelectBaseComponent {
           (item) => item.workflow_id !== this.workflowId,
         );
         this.isLoading = false;
+        this.cdr.detectChanges();
       })
       .catch(() => {
         (this as any).flowList = [];
         this.isLoading = false;
+        this.cdr.detectChanges();
       });
   }
 
@@ -152,9 +156,11 @@ export class batchBindFlowsComponent extends PublishedFlowSelectBaseComponent {
           ...result.workflow_version_list,
         ].filter((item) => item.workflow_id !== this.workflowId);
         this.isLoading = false;
+        this.cdr.detectChanges();
       })
       .catch(() => {
         this.isLoading = false;
+        this.cdr.detectChanges();
       });
   }
 

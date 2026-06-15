@@ -5,6 +5,24 @@ OLE FastAPI server — lightweight version of jiwen-server/serve/server.py
 import os
 from contextlib import asynccontextmanager
 
+# 在任何 jiuwen OBS 操作之前，补丁 Crypt 类使用明文解密
+# agent_runtime 本地调试环境 SK 为明文存储，而 jiuwen Crypt 默认实现抛异常
+from jiuwen.common.security.cryptor import Crypt as JiuWenCrypt
+
+
+def _plain_encrypt(origin: str):
+    """明文加密 — 直接返回原始字符串（agent_runtime 本地环境不加密）"""
+    return origin
+
+
+def _plain_decrypt(encrypt_str: str):
+    """明文解密 — 直接返回原始字符串（agent_runtime 本地环境 SK 为明文存储）"""
+    return encrypt_str
+
+
+JiuWenCrypt.encrypt = staticmethod(_plain_encrypt)
+JiuWenCrypt.decrypt = staticmethod(_plain_decrypt)
+
 from agent_runtime.common import settings
 from agent_runtime.common.checkpointer_config import build_redis_checkpointer_config
 from agent_runtime.common.exception.errors import AgentBuilderError
@@ -15,6 +33,8 @@ from agent_runtime.common.logging_context import (
 )
 from agent_runtime.common.redis_manager import RedisClientManager
 from agent_runtime.context.middleware import RequestContextMiddleware
+from agent_runtime.memory.adapter.ltm_manager import init_ltm
+from agent_runtime.memory.internal_routes import memory_internal_router
 from agent_runtime.serve.apis.orchestration import execution_app
 from agent_runtime.serve.apis.user_variable_api import user_variable_router
 from fastapi import FastAPI, Request
@@ -58,7 +78,7 @@ from agent_runtime.extension.workflow_node.flow_code import FlowCode, JIUWEN_COD
 component_class_pool.register_component_class(JIUWEN_CODE_TYPE, FlowCode)
 logger.info("Registered workflow component: jiuwen.code")
 
-apps_map = [execution_app, user_variable_router]
+apps_map = [execution_app, user_variable_router, memory_internal_router]
 
 
 @asynccontextmanager
@@ -97,6 +117,13 @@ async def lifespan(app: FastAPI):  # noqa: redefined-outer-name
         logger.info("Redis connection check passed")
     except Exception as e:
         raise RuntimeError(f"Redis connection check failed: {e}") from e
+
+    # Initialize memory library (LTM) — non-critical, degrades gracefully
+    memory_ok = await init_ltm(redis_client)
+    if memory_ok:
+        logger.info("Memory library enabled")
+    else:
+        logger.info("Memory library not available (non-critical)")
 
     # 创建并设置 Redis Checkpointer 为默认
     checkpointer_config = build_redis_checkpointer_config()

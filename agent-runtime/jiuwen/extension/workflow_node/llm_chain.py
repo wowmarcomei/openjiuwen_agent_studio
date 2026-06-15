@@ -183,6 +183,7 @@ class LLMChain(WorkflowComponent):
         """LLM 组件流式调用接口 - 支持思考模式"""
         await self._initialize_if_needed()
         self._session = session
+        node_id = session.get_component_id()
         self._context = context
         self._stream_final_output = None
 
@@ -191,6 +192,20 @@ class LLMChain(WorkflowComponent):
 
         if self._get_response_format().get("type") == "json":
             result = await self.invoke(inputs, session, context)
+            custom_data = {
+                "node_id": node_id,
+                "node_name": self._conf.get("name") or node_id,
+                "node_type": JIUWEN_LLM_TYPE,
+                "componentType": "LLM",
+                "should_interrupt": False,
+                "userFields": result.get(USER_FIELDS, {}),
+                "model_stats": result.get("metadata", {}),
+                "status": "finish",
+            }
+            if self._is_thinking_enabled():
+                custom_data["think"] = result.get(USER_FIELDS, {}).get("reasoning_content")
+            await session.write_custom_stream(
+                CustomSchema(type=PARTIAL_CONTENT, index=0, data=custom_data))
             self._stream_final_output = result
             yield result
         else:
@@ -215,6 +230,24 @@ class LLMChain(WorkflowComponent):
                             "final_output", ""
                         )
                         if chunk_data.get("final_output"):
+                            custom_data = {
+                                "rawOutput": raw_output.get("rawOutput") if
+                                    isinstance(raw_output, dict) else raw_output,
+                                "node_id": node_id,
+                                "node_name": self._conf.get("name") or node_id,
+                                "node_type": JIUWEN_LLM_TYPE,
+                                "componentType": "LLM",
+                                "userFields": raw_output,
+                                "model_stats": chunk_data.get("metadata", {}),
+                            }
+                            if isinstance(raw_output, dict) and raw_output.get("reasoning_content"):
+                                custom_data["think"] = raw_output.get("reasoning_content")
+                            await session.trace(data={"llm_info": {
+                                "llm_inputs": language_model_inputs,
+                                "llm_outputs": chunk_data.get("llm_outputs") or chunk_data.get("final_output"),
+                                "reasoning_content": reasoning_content
+                            }})
+                            self._stream_final_output = custom_data
                             yield {
                                 USER_FIELDS: {"reasoning_content": reasoning_content}
                             }
@@ -222,7 +255,12 @@ class LLMChain(WorkflowComponent):
                             yield {USER_FIELDS: {output_id: raw_output}}
                 else:
                     accumulated_content = ""
-                    async for chunk in self._llm.stream(messages=language_model_inputs):
+                    async for chunk in self._llm.stream(
+                        messages=language_model_inputs, tools=inputs.get("tools", [])):
+                        if hasattr(chunk, 'usage_metadata') and chunk.usage_metadata:
+                            model_stats = getattr(chunk.usage_metadata, 'model_stats', {})
+                        if hasattr(chunk, 'metadata') and chunk.metadata:
+                            model_stats.update(chunk.metadata)
                         if chunk.content and chunk.content != "":
                             if getattr(chunk, "finish_reason", "null") == "null":
                                 accumulated_content += chunk.content
@@ -232,7 +270,22 @@ class LLMChain(WorkflowComponent):
                         accumulated_content,
                         self._get_response_format().get("type"),
                     )
-                    self._stream_final_output = {USER_FIELDS: formatted_res}
+                    custom_data = {
+                        "rawOutput": accumulated_content,
+                        "node_id": node_id,
+                        "node_name": self._conf.get("name") or node_id,
+                        "node_type": JIUWEN_LLM_TYPE,
+                        "componentType": "LLM",
+                        "should_interrupt": False,
+                        "userFields": formatted_res,
+                        "model_stats": model_stats,
+                        "status": "finish"
+                    }
+                    await session.trace(data={"llm_info": {
+                            "llm_inputs": language_model_inputs,
+                            "llm_outputs": accumulated_content,
+                        }})
+                    self._stream_final_output = custom_data
                     yield {USER_FIELDS: {"final_output": formatted_res}}
 
             except Exception as e:
@@ -490,11 +543,21 @@ class LLMChain(WorkflowComponent):
                 system_prompt = system_template
 
         if self._get_enable_history():
-            return self._get_history(user_prompt, system_prompt)
-        messages = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": user_prompt})
+            messages = self._get_history(user_prompt, system_prompt)
+        else:
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": user_prompt})
+
+        # 注入长期记忆消息（如果 LLM 节点配置了 memory.enable）
+        if self.mem_conf and self.mem_conf.get("enable") and self._session:
+            from jiuwen.common.llm_service.messages import BaseMessage
+
+            memory_msg = self._session.get_global_state("memory_message")
+            if isinstance(memory_msg, BaseMessage):
+                messages.append({"role": "user", "content": memory_msg.content})
+
         return messages
 
     def _validate_prompt_template(self, template: str) -> None:

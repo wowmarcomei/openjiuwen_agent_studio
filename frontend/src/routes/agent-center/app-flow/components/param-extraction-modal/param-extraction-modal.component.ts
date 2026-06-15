@@ -83,7 +83,8 @@ import { InputTreeSelect } from 'src/routes/agent-center/app-flow/components/inp
 import { NodeTypeTopic } from '@routes/agent-center/types/common.types';
 import { HelpCenterService } from '@services/help-center.service';
 import { MessageComponent } from "@shared/services/cfdata.service";
-
+import { ObjectTemplateComponent } from "@routes/object-manage/component/object-template/object-template.component";
+import { OptimizePromptModalComponent } from '@routes/agent-center/app-agent/components/optimize-prompt-modal/optimize-prompt-modal.component';
 interface IWFViewP extends IWFView {
   processing_workflows?: IProcessingWorkflow[];
   children?: IWFViewP[];
@@ -304,18 +305,17 @@ export class ParamExtractionModalComponent
       param.children = [child];
     }
     param.expanded = true;
-    const parentArr = this.findParentArr(param);
-    if (parentArr === 'domainObjectsParams') {
+    this.refreshRootArray(this.midParams, param);
+    this.refreshRootArray(this.fetchParams, param);
+    if (this.findParentArr(param) === 'domainObjectsParams') {
       const idx = this.domainObjectsParams.findIndex((o) => this.isNodeInTree(o, param) || o === param);
       if (idx > -1) {
-        this.domainObjectsParams[idx] = { ...this.domainObjectsParams[idx], children: [...this.domainObjectsParams[idx].children] };
+        this.domainObjectsParams[idx] = { ...this.domainObjectsParams[idx], children: [...(this.domainObjectsParams[idx].children ?? [])] };
         if (this.domainObjectsParams[idx].processing_workflows) {
           this.domainObjectsParams[idx].processing_workflows = [...this.domainObjectsParams[idx].processing_workflows];
         }
       }
-      this.domainObjectsParams = [...this.domainObjectsParams];
-    } else if (parentArr) {
-      this[parentArr] = [...this[parentArr]];
+      this.domainObjectsParams = this.updateImmutablePath(this.domainObjectsParams, param);
     }
     this.cdr.detectChanges();
     this.onSave();
@@ -334,28 +334,68 @@ export class ParamExtractionModalComponent
       param.children = [child];
     }
     param.expanded = true;
-    this.fetchParams = [...this.fetchParams];
+    this.fetchParams = this.updateImmutablePath(this.fetchParams, param);
     this.cdr.detectChanges();
     this.onSave();
   }
 
-  private findParentArr(param: IWFView): string | null {
-    if (this.midParams.includes(param)) {
-      return 'midParams';
+  private updateImmutablePath(rootArr: IWFView[], target: IWFView): IWFView[] {
+    const path = this.getPathToNode(rootArr, target);
+    if (!path.length) return rootArr;
+    const result = [...rootArr];
+    let current: IWFView[] = result;
+    for (let i = 0; i < path.length; i++) {
+      const idx = current.findIndex((n) => n === path[i]);
+      if (idx === -1) break;
+      const updated = i === path.length - 1
+        ? { ...path[i] }
+        : { ...path[i], children: [...(path[i].children ?? [])] };
+      current[idx] = updated;
+      current = (updated.children ?? []) as IWFView[];
     }
-    if (this.fetchParams.includes(param)) {
-      return 'fetchParams';
-    }
-    if (this.domainObjectsParams.includes(param)) {
-      return 'domainObjectsParams';
-    }
-    for (let i = 0; i < this.domainObjectsParams.length; i++) {
-      const domainObj = this.domainObjectsParams[i];
-      if (this.isNodeInTree(domainObj, param)) {
-        return 'domainObjectsParams';
+    return result;
+  }
+
+  private getPathToNode(nodes: IWFView[], target: IWFView, path: IWFView[] = []): IWFView[] {
+    for (const node of nodes) {
+      if (node === target) return [...path, node];
+      if (node.children) {
+        const result = this.getPathToNode(node.children, target, [...path, node]);
+        if (result.length) return result;
       }
     }
+    return [];
+  }
+
+  private refreshRootArray(rootArr: IWFView[], target: IWFView): void {
+    const parentArr = this.findParentArr(target);
+    if (parentArr === 'domainObjectsParams') {
+      this.domainObjectsParams = this.updateImmutablePath(this.domainObjectsParams, target);
+    } else if (parentArr === 'midParams') {
+      this.midParams = this.updateImmutablePath(this.midParams, target);
+    } else if (parentArr === 'fetchParams') {
+      this.fetchParams = this.updateImmutablePath(this.fetchParams, target);
+    }
+  }
+
+  private findParentArr(param: IWFView): string | null {
+    if (this.isNodeInTreeArr(this.midParams, param)) {
+      return 'midParams';
+    }
+    if (this.isNodeInTreeArr(this.fetchParams, param)) {
+      return 'fetchParams';
+    }
+    if (this.isNodeInTreeArr(this.domainObjectsParams, param)) {
+      return 'domainObjectsParams';
+    }
     return null;
+  }
+
+  private isNodeInTreeArr(nodes: IWFView[], target: IWFView): boolean {
+    for (const node of nodes) {
+      if (this.isNodeInTree(node, target)) return true;
+    }
+    return false;
   }
 
   private isNodeInTree(node: IWFView, target: IWFView): boolean {
@@ -413,8 +453,9 @@ export class ParamExtractionModalComponent
 
   onPreParamTypeChange(param) {
     NodeUtils.onOutputParamTypeChange(param);
-    const parentArr = this.findParentArr(param);
-    if (parentArr === 'domainObjectsParams') {
+    this.refreshRootArray(this.midParams, param);
+    this.refreshRootArray(this.fetchParams, param);
+    if (this.findParentArr(param) === 'domainObjectsParams') {
       const idx = this.domainObjectsParams.findIndex((o) => this.isNodeInTree(o, param) || o === param);
       if (idx > -1) {
         this.domainObjectsParams[idx] = { ...this.domainObjectsParams[idx], children: this.domainObjectsParams[idx].children ? [...this.domainObjectsParams[idx].children] : [] };
@@ -422,9 +463,7 @@ export class ParamExtractionModalComponent
           this.domainObjectsParams[idx].processing_workflows = [...this.domainObjectsParams[idx].processing_workflows];
         }
       }
-      this.domainObjectsParams = [...this.domainObjectsParams];
-    } else if (parentArr) {
-      this[parentArr] = [...this[parentArr]];
+      this.domainObjectsParams = this.updateImmutablePath(this.domainObjectsParams, param);
     }
     this.cdr.detectChanges();
     this.onSave();
@@ -885,24 +924,23 @@ export class ParamExtractionModalComponent
   }
 
   public openRefModal() {
-    const outputs = {
-      select: (temp: ITmpl) => {
-        this.prompt = temp.content;
-        this.onSave();
-      },
-    };
-    this.nzModal.create<RefPromptComponent>({
-      nzTitle: '',
+    const myModal = this.nzModal.create({
       nzContent: RefPromptComponent,
-      nzClassName: 'ref-prompt-modal',
+      nzWidth: 1000,
       nzData: {
-        outputs,
+        select: (tmpl: ITmpl) => {
+          this.prompt = tmpl.content;
+          this.onSave();
+          this.cdr.markForCheck();
+        },
       },
-    } as any);
+    });
   }
 
   public subFlowOps: any[] = [];
   public subFlowSelectOps: { label: string; value: string }[] = [];
+
+  compareWithValue = (o1: any, o2: any): boolean => o1 === o2;
   isLoadingFlowData = false;
   isTriggeredConfirm = false;
   public isLoadingFlows = false;
@@ -1311,6 +1349,7 @@ export class ParamExtractionModalComponent
         label: f.name,
         value: f.id,
       }));
+      this.cdr.detectChanges();
     } finally {
       this.isLoadingFlows = false;
     }
@@ -1367,7 +1406,20 @@ export class ParamExtractionModalComponent
   public onIntelligentAdd(role) {
     if (this.isFlowReadonly) return;
     if (!this.prompt) return;
-    this.nzMessage.info('功能暂不可用');
+    this.nzModal.create({
+      nzContent: OptimizePromptModalComponent,
+      nzWidth: 600,
+      nzData: {
+        instruct: this?.prompt,
+        isWorkflow: true,
+        tipsChange: value => {
+          this.prompt = value ?? '';
+          this.onSave();
+          this.cdr.markForCheck();
+        },
+      },
+    });
+
   }
 
   public updateModel(modelInfo: any) {
@@ -1652,11 +1704,43 @@ export class ParamExtractionModalComponent
   }
 
   midChooseTemplate() {
-    this.nzMessage.info('功能暂不可用');
+    const modalRef = this.nzModal.create<ObjectTemplateComponent>({
+      nzContent: ObjectTemplateComponent,
+      nzClassName: 'modal-custom900-class',
+      nzFooter: null,
+      nzTitle: this.i18n.transform('object_template'),
+      nzData: {
+        templatesSelected: (data) => {
+          this.midParams = [
+            ...this.midParams,
+            ...FlowUtils.objectTempIWFields2Views(data),
+          ];
+          modalRef.close();
+          this.onMidNameChange();
+          this.onSave();
+        },
+      },
+    });
   }
 
   domainObjectChooseTemplate() {
-    this.nzMessage.info('功能暂不可用');
+    const modalRef = this.nzModal.create<ObjectTemplateComponent>({
+      nzContent: ObjectTemplateComponent,
+      nzClassName: 'modal-custom900-class',
+      nzFooter: null,
+      nzTitle: this.i18n.transform('object_template'),
+      nzData: {
+        templatesSelected: (data) => {
+          this.domainObjectsParams = [
+            ...this.domainObjectsParams,
+            ...FlowUtils.objectTempIWFields2Views(data),
+          ];
+          modalRef.close();
+          this.onDomainNameChange();
+          this.onSave();
+        },
+      },
+    });
   }
 
   public addPreDefinedParam(arr: IWFView[], ops: IParamRef[]) {

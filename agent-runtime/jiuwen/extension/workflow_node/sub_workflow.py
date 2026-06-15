@@ -39,6 +39,7 @@ from jiuwen.extension.workflow_node.utils import (
 from openjiuwen.core.common.constants.constant import INTERACTIVE_INPUT, INTERACTION
 from openjiuwen.core.common.logging import workflow_logger, LogEventType
 from openjiuwen.core.context_engine import ModelContext
+from openjiuwen.core.foundation.llm import UserMessage
 from openjiuwen.core.graph.executable import Input, Output
 from openjiuwen.core.graph.pregel import GraphInterrupt
 from openjiuwen.core.session import (
@@ -467,7 +468,7 @@ class SubWorkflow(WorkflowComponent):
             return True
         return self._session_has_interactive_input(session)
 
-    def _prepare_child_inputs(
+    async def _prepare_child_inputs(
         self,
         inputs: Input,
         session: Session,
@@ -477,7 +478,7 @@ class SubWorkflow(WorkflowComponent):
     ) -> Any:
         """构建子工作流输入：恢复场景使用 InteractiveInput，否则使用普通 dict。"""
         is_resume = self._should_resume_child_workflow(session)
-        params = self._build_invoke_params(inputs, session, context)
+        params = await self._build_invoke_params(inputs, session, context)
         if is_resume:
             self.node_state.status = ExecutionStatus.USER_INTERACT
             resume_query = self._extract_parent_resume_query(session)
@@ -491,6 +492,7 @@ class SubWorkflow(WorkflowComponent):
             **inputs.get(USER_FIELDS, {}),
             "query": params["query"],
             "global_variables": params["global_variables"],
+            "conversation_history": params["conversation_history"],
             "_REQUEST": params["global_variables"],
         }
         return child_inputs
@@ -753,10 +755,14 @@ class SubWorkflow(WorkflowComponent):
 
         return workflow_instance
 
-    def _build_invoke_params(
+    async def _build_invoke_params(
         self, inputs: dict, session: Session, context: ModelContext
     ) -> dict:
-        """构建子工作流调用参数
+        """构建子工作流调用参数，并将 query 作为用户消息写入对话历史。
+
+        在调用子工作流前，将当前 query 以 UserMessage 形式追加到 context 中，
+        使子工作流内各组件（如 LLM）通过 context.get_messages() 即可获取完整对话历史。
+        同时将对话历史序列化后放入返回的 params，便于子工作流通过 inputs 显式获取。
 
         Args:
             inputs: 输入数据
@@ -764,7 +770,7 @@ class SubWorkflow(WorkflowComponent):
             context: 模型上下文
 
         Returns:
-            dict: 调用参数
+            dict: 调用参数，包含 query、global_variables、conversation_history
         """
         system_fields = inputs.get(SYSTEM_FIELDS, {})
         user_fields = inputs.get(USER_FIELDS, {})
@@ -785,9 +791,21 @@ class SubWorkflow(WorkflowComponent):
         global_variables.update(user_fields)
         global_variables["userId"] = user_id
 
+        if context and query:
+            user_msg = UserMessage(content=query)
+            await context.add_messages(user_msg)
+
+            all_messages = context.get_messages()
+            conversation_history = [msg.model_dump() for msg in all_messages]
+        else:
+            conversation_history = []
+
+        self._current_query = query
+
         return {
             "query": query,
             "global_variables": global_variables,
+            "conversation_history": conversation_history,
         }
 
     def _build_child_interactive_input(self, user_response: str) -> InteractiveInput:
@@ -834,13 +852,16 @@ class SubWorkflow(WorkflowComponent):
 
         self._workflow_instance = await self._get_workflow_instance(session)
 
-        child_inputs = self._prepare_child_inputs(
+        child_inputs = await self._prepare_child_inputs(
             inputs, session, context, for_stream=False
         )
         # 记录传入的全局变量值（调试信息）
         global_vars = self._collect_global_vars(inputs, session)
         if global_vars:
             await session.trace(data={"memory": global_vars})
+        # 进入子工作流前：父子 _REQUEST 隔离，避免父值覆盖子 Start 的输入
+        parent_request_snapshot = self._enter_sub_request_scope(session, child_inputs)
+        scope_active = True
         try:
             invoke_timeout = self._get_timeout(session)
             result = await asyncio.wait_for(
@@ -853,7 +874,9 @@ class SubWorkflow(WorkflowComponent):
                 timeout=invoke_timeout,
             )
 
-            self._sync_sub_request_to_parent(session)
+            # 子工作流正常返回：还原父 _REQUEST 并选择性同步子的修改
+            self._exit_sub_request_scope(session, parent_request_snapshot)
+            scope_active = False
             # 获取更新后的全局变量值
             updated_memory = self._collect_updated_memory(session)
 
@@ -933,6 +956,12 @@ class SubWorkflow(WorkflowComponent):
                 error_msg=str(e) if LOG_VERBOSE_MODE else str(type(e).__name__),
                 cause=e,
             ) from e
+        finally:
+            # 子工作流异常 / 中断退出时也要还原父 _REQUEST，否则后续父节点读到的
+            # 是子工作流的 _request，会导致变量解析错误
+            if scope_active:
+                self._exit_sub_request_scope(session, parent_request_snapshot)
+                scope_active = False
 
     async def stream(
         self, inputs: Input, session: Session, context: ModelContext
@@ -966,7 +995,7 @@ class SubWorkflow(WorkflowComponent):
 
         self._workflow_instance = await self._get_workflow_instance(session)
 
-        child_inputs = self._prepare_child_inputs(
+        child_inputs = await self._prepare_child_inputs(
             inputs, session, context, for_stream=True
         )
         # 记录传入的全局变量值（调试信息）
@@ -985,6 +1014,9 @@ class SubWorkflow(WorkflowComponent):
                     {WORKFLOW_STREAM_FRAME_TIMEOUT: frame_timeout}
                 )
 
+        # 进入子工作流前：父子 _REQUEST 隔离，避免父值覆盖子 Start 的输入
+        parent_request_snapshot = self._enter_sub_request_scope(session, child_inputs)
+        scope_active = True
         try:
             stream_iter = self._workflow_instance.stream(
                 inputs=child_inputs,
@@ -1059,7 +1091,9 @@ class SubWorkflow(WorkflowComponent):
                     yield item
                 return
 
-            self._sync_sub_request_to_parent(session)
+            # 子工作流流式正常结束：还原父 _REQUEST 并选择性同步子的修改
+            self._exit_sub_request_scope(session, parent_request_snapshot)
+            scope_active = False
 
             final_res = messages[-1] if messages else final_res
             # 获取更新后的全局变量值
@@ -1079,6 +1113,7 @@ class SubWorkflow(WorkflowComponent):
             end_payload = dict(last_processed or {})
             end_payload["is_sub"] = True
             end_payload["parentNodeId"] = session.get_component_id()
+            end_payload["sub_workflow_query"] = getattr(self, '_current_query', '')
             await session.write_custom_stream(
                 CustomSchema(type=MESSAGE_NODE_END, index=1, data=end_payload)
             )
@@ -1128,6 +1163,12 @@ class SubWorkflow(WorkflowComponent):
                 error_msg=str(e) if LOG_VERBOSE_MODE else str(type(e).__name__),
                 cause=e,
             ) from e
+        finally:
+            # 流式异常 / 中断 / generator 提前 close 时也要还原父 _REQUEST，
+            # 否则父工作流后续节点读到的是子工作流残留的 _request
+            if scope_active:
+                self._exit_sub_request_scope(session, parent_request_snapshot)
+                scope_active = False
 
     async def _process_stream_chunk(
         self,
@@ -1210,6 +1251,96 @@ class SubWorkflow(WorkflowComponent):
             return chunk
 
         return None
+
+    def _enter_sub_request_scope(
+        self, session: Session, child_inputs: dict
+    ) -> dict:
+        """进入子工作流前隔离父子 _REQUEST 作用域。
+
+        新框架中父子工作流共享同一份 ``global_state``，导致子工作流的 Start 节点
+        ``_assemble_output`` 通过 ``get_workflow_param(session, REQUEST_VARIABLES)``
+        读到的是父工作流的 ``_request``，会把 ``inputs_copy`` 中本应保留的子工作流
+        输入字段错误覆盖。
+
+        旧框架（``orchestration/flow/workflow.py``）通过每个工作流实例持有独立
+        ``runtime_context`` 实现父子隔离，并在子 ``_arun`` 入口将 ``_request`` 重置
+        为传入的 ``global_variables``：
+
+            recovered = self.runtime_context.get(REQUEST_VARIABLES, {})
+            request_variables = {...过滤后的 global_variables...}
+            self.runtime_context.set(REQUEST_VARIABLES, {**recovered, **request_variables})
+
+        本方法在新框架下模拟相同语义：将父 ``_request`` 快照保存并返回，再把
+        ``global_state[_request]`` 替换为 ``parent_snapshot ∪ child_request``，
+        让子工作流既能继承父声明的 envs，又能用自身的 globals 覆盖同名 key。
+
+        Args:
+            session: 工作流会话
+            child_inputs: 即将传给子工作流的 inputs；其中 ``_REQUEST`` 键由
+                ``_prepare_child_inputs`` 写入，是子工作流的 globals 视图
+
+        Returns:
+            dict: 父工作流 ``_request`` 的深拷贝快照，供 ``_exit_sub_request_scope``
+                还原使用
+        """
+        parent_snapshot = deepcopy(
+            get_workflow_param(session, REQUEST_VARIABLES) or {}
+        )
+        # resume 场景下 child_inputs 是 InteractiveInput 而非 dict，没有 _REQUEST
+        if isinstance(child_inputs, dict):
+            child_request = child_inputs.get("_REQUEST") or {}
+        else:
+            child_request = {}
+        if not isinstance(child_request, dict):
+            child_request = {}
+        merged = {**parent_snapshot, **child_request}
+        session.update_global_state({REQUEST_VARIABLES: merged})
+        return parent_snapshot
+
+    def _exit_sub_request_scope(
+        self, session: Session, parent_snapshot: dict
+    ) -> None:
+        """退出子工作流时还原父 _REQUEST 并选择性同步子的修改。
+
+        子工作流执行期间可能通过 SetVariable 等组件修改 ``global_state[_request]``，
+        这些修改语义上属于子工作流的局部副本。退出时仅把 **父工作流已声明的 key**
+        从子修改后的副本同步回父快照——既不会丢失子对父变量的合法更新，又能避免
+        子工作流内部的临时变量污染父的 ``_request``。
+
+        与旧框架 ``components/sub_workflow.py::_sync_sub_request_to_parent`` 的策略
+        一致（``orchestration/flow/components/sub_workflow.py:357``）。
+
+        Args:
+            session: 工作流会话
+            parent_snapshot: ``_enter_sub_request_scope`` 返回的父 ``_request`` 快照
+        """
+        try:
+            sub_request_vars = get_workflow_param(session, REQUEST_VARIABLES) or {}
+            updated = {
+                k: sub_request_vars[k]
+                for k in parent_snapshot
+                if k in sub_request_vars
+            }
+            restored = {**parent_snapshot, **updated}
+            session.update_global_state({REQUEST_VARIABLES: restored})
+            if updated:
+                workflow_logger.info(
+                    "Sub-workflow request variables synced to parent",
+                    event_type=LogEventType.WORKFLOW_COMPONENT_END,
+                    component_type_str="SubWorkflow",
+                    metadata={"updated_keys": list(updated.keys())},
+                )
+        except Exception as e:
+            workflow_logger.warning(
+                f"Failed to restore parent request scope after sub-workflow: {e}",
+                event_type=LogEventType.WORKFLOW_COMPONENT_ERROR,
+                component_type_str="SubWorkflow",
+            )
+            # 兜底：尽量恢复父快照，避免父 state 被子的临时变量污染
+            try:
+                session.update_global_state({REQUEST_VARIABLES: parent_snapshot})
+            except Exception:
+                pass
 
     def _sync_sub_request_to_parent(self, session: Session):
         """将子工作流的 REQUEST 变量同步回父工作流

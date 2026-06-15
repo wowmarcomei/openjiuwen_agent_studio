@@ -274,6 +274,10 @@ class End(BaseEnd):
         self._mix_render_complete = False
         self._mix_batch_pushed = False  # batch 路径已 push 数据，stream 可以开始渲染
 
+        # Pregel 引擎在 wait_for_all=False 时，每条入边分别触发 End 节点，
+        # 导致 stream()/invoke() 被多次调用。用此标志保证幂等。
+        self._executed = False
+
     @staticmethod
     def _is_workflow_interrupted(session: Session) -> bool:
         """检查工作流是否处于中断状态，通过 workflow_state 中的 __interrupted 标志判断。"""
@@ -517,6 +521,11 @@ class End(BaseEnd):
         - 处理输入中的生成器值
         - 支持结构化输出
         """
+        # 幂等保护：End 节点在 wait_for_all=False 时可能被 Pregel 引擎多次触发
+        if self._executed:
+            return {}
+        self._executed = True
+
         # 处理输入中的生成器值
         outputs = {}
         if inputs and isinstance(inputs, dict):
@@ -587,7 +596,9 @@ class End(BaseEnd):
         inner_session = getattr(session, "_inner", None)
         node_id = getattr(inner_session.state(), "_node_id", None)
         query = session.get_global_state("query") or ""
-        user_fields = {**outputs, **inputs, **{"query": query}}
+        # outputs 来自 IR 中 outputs.userFields（#end_ 前缀映射），代表 End 节点最终输出，
+        # 优先级高于 inputs（IR 的 inputs.userFields，仅作为兜底/原始引用）。
+        user_fields = {**inputs, **outputs, **{"query": query}}
 
         # 构建带有 think 的 result（用于 message_end）
         result_with_think = get_output_data_with_metadata(
@@ -648,6 +659,11 @@ class End(BaseEnd):
         """
         增强的流式输出处理，支持生成器值和结构化输出。
         """
+        # 幂等保护：End 节点在 wait_for_all=False 时可能被 Pregel 引擎多次触发
+        if self._executed:
+            return
+        self._executed = True
+
         # 处理输入中的生成器值
         outputs = {}
         if inputs and isinstance(inputs, dict):
@@ -686,7 +702,7 @@ class End(BaseEnd):
             getattr(inner_session.state(), "_node_id", None) if inner_session else None
         )
         query = session.get_global_state("query") or ""
-        user_fields = {**outputs, **inputs, **{"query": query}}
+        user_fields = {**inputs, **outputs, **{"query": query}}
         last_end_node_stream = None
         first_end_node_stream = True
         async for output in super().stream(inputs, session, context):
@@ -796,7 +812,7 @@ class End(BaseEnd):
             getattr(inner_session.state(), "_node_id", None) if inner_session else None
         )
         query = session.get_global_state("query") or ""
-        user_fields = {**outputs, **inputs, **{"query": query}}
+        user_fields = {**inputs, **outputs, **{"query": query}}
 
         # 构建带有 think 的 result（用于 message_end）
         result_with_think = get_output_data_with_metadata(
@@ -854,6 +870,10 @@ class End(BaseEnd):
         """
         流式输入聚合为批量输出（与 invoke 模式一致）。
         """
+        # 幂等保护：End 节点在 wait_for_all=False 时可能被 Pregel 引擎多次触发
+        if self._executed:
+            return None
+        self._executed = True
         # 聚合流式输入
         collected_inputs = []
         outputs = {}
@@ -929,7 +949,7 @@ class End(BaseEnd):
         inner_session = getattr(session, "_inner", None)
         node_id = getattr(inner_session.state(), "_node_id", None)
         query = session.get_global_state("query") or ""
-        user_fields = {**outputs, **final_inputs, **{"query": query}}
+        user_fields = {**final_inputs, **outputs, **{"query": query}}
 
         # 构建带有 think 的 result（用于 message_end）
         result_with_think = get_output_data_with_metadata(
@@ -1016,6 +1036,11 @@ class End(BaseEnd):
         流式输入通过 super().transform() 逐帧处理，
         输出先缓冲，消费完所有流式数据后检查中断状态，中断时丢弃所有输出。
         """
+        # 幂等保护：End 节点在 wait_for_all=False 时可能被 Pregel 引擎多次触发
+        if self._executed:
+            return
+        self._executed = True
+
         # 开始时清空缓存
         self._reset_stream_output()
 
@@ -1089,7 +1114,7 @@ class End(BaseEnd):
             getattr(inner_session.state(), "_node_id", None) if inner_session else None
         )
         query = session.get_global_state("query") or ""
-        user_fields = {**outputs, **clean_input_values, **{"query": query}}
+        user_fields = {**clean_input_values, **outputs, **{"query": query}}
 
         last_end_node_stream = None
         buffered_outputs = []
@@ -1260,7 +1285,7 @@ class End(BaseEnd):
             getattr(inner_session.state(), "_node_id", None) if inner_session else None
         )
         query = session.get_global_state("query") or ""
-        user_fields = {**outputs, **clean_input_values, **{"query": query}}
+        user_fields = {**clean_input_values, **outputs, **{"query": query}}
 
         # 构建带有 think 的 result（用于 message_end）
         result_with_think = get_output_data_with_metadata(

@@ -33,6 +33,7 @@ from jiuwen.serve.controllers.execution.manager import AsyncStateManager
 from jiuwen.serve.controllers.execution.open_utils import async_ir_load, cache_workflow_queue
 from openjiuwen.core.common.logging import workflow_logger
 from pydantic import ValidationError
+from agent_builder.nl_to_agent.nl2 import N2LRequestBody, _n2l_json_wapper, _chat
 
 execution_app = APIRouter(tags=["execution_app"])
 
@@ -77,7 +78,7 @@ def _get_runner_by_type(agent_type: str):
     """根据agent_type返回对应的runner"""
     if agent_type == "react":
         return _get_react_runner()
-    if agent_type == "Controller":
+    if agent_type in ("Controller", "PlanExecute"):
         return _get_controller_runner()
     return _get_workflow_runner()
 
@@ -179,25 +180,28 @@ async def stream_response(req: ExecutionRequest, execution_id: str, runner):
     输出格式: data: {"type": "end node stream", "index": 0, "payload": {"response": "text"}}\n\n
     """
     execution_id = execution_id or str(uuid.uuid4())
+    last_event = ""
     async for chunk in runner.run_streaming(req, execution_id):
         if chunk is None:
             continue
-        # If chunk is already bytes (SSE format), yield directly
-        # If chunk is dict, wrap with SSE format
         if isinstance(chunk, bytes):
             yield chunk
         else:
             yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+            if isinstance(chunk, dict):
+                last_event = chunk.get("event", "")
 
-    # Done 事件
-    done_payload = {
-        "event": "done",
-        "data": {},
-        "index": 0,
-        "executionId": execution_id,
-        "createdTime": int(time.time()),
-    }
-    yield f"data: {json.dumps(done_payload, ensure_ascii=False)}\n\n"
+    # 兜底 done：runner 仅在异常处理中自行发送 done（见 workflow_runner.py except 块），
+    # 正常完成时 runner 不发 done，由这里补发。
+    if last_event != "done":
+        done_payload = {
+            "event": "done",
+            "data": {},
+            "index": 0,
+            "executionId": execution_id,
+            "createdTime": int(time.time()),
+        }
+        yield f"data: {json.dumps(done_payload, ensure_ascii=False)}\n\n"
 
 
 @execution_app.post("/v1/orchestration/ir/component/{component_id}/execute")
@@ -320,3 +324,24 @@ async def delete_ir_execution_instance(req_json: dict):
         "code": StatusCode.SUCCESS.code,
         "message": StatusCode.SUCCESS.errmsg,
     }
+
+
+@execution_app.post("/v1/{project_id}/{agent_type}/generator/conversations/{cid}/chat")
+async def chat_n2l(project_id: str, agent_type: str, cid: str, body: N2LRequestBody,
+                   request: Request) -> StreamingResponse:
+    workflow_logger.debug(
+        "NL2 Chat Request - URL: %s %s", request.method, request.url
+    )
+    workflow_logger.debug(
+        "NL2 Chat Request - Headers: %s",
+        json.dumps(dict(request.headers), ensure_ascii=False),
+    )
+    workflow_logger.debug(
+        "NL2 Chat Request - Body: %s",
+        json.dumps(body.model_dump(exclude_unset=True), ensure_ascii=False),
+    )
+    # 包装req_json，使得和jiuwen的chat_build接口保持json格式一致
+    payload = _n2l_json_wapper(project_id, agent_type, cid, body.model_dump(exclude_unset=True), request)
+    # run chat
+    chat_response = await _chat(payload)
+    return chat_response

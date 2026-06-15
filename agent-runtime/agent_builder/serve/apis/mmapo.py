@@ -24,8 +24,8 @@ from agent_builder.serve.apis.prompt import (
 )
 from agent_builder.serve.common.exception.exception_handler import ExceptionHandler
 from flask import request, Blueprint, copy_current_request_context, g, jsonify
-from jiuwen.common.exception import JiuWenBaseException
-from jiuwen.prompt.tune.template.utils import TaskInfo
+from agent_builder.adapter.exception_bridge import JiuWenBaseException
+from agent_builder.adapter.task_info import TaskInfo
 
 mmapo_app = Blueprint("mmapo_api", __name__)
 
@@ -50,14 +50,13 @@ def prompt_optimization():
         creation_info.model_info.headers = {}
     if not creation_info.assistant_info.headers:
         creation_info.assistant_info.headers = {}
-    if os.getenv("SERVICE_TYPE") == "agentBuilder":
-        request_headers = dict(request.headers)
-        creation_info.model_info.headers = (
-            request_headers | creation_info.model_info.headers
-        )
-        creation_info.assistant_info.headers = (
-            request_headers | creation_info.assistant_info.headers
-        )
+    request_headers = dict(request.headers)
+    creation_info.model_info.headers = (
+        request_headers | creation_info.model_info.headers
+    )
+    creation_info.assistant_info.headers = (
+        request_headers | creation_info.assistant_info.headers
+    )
 
     create_time = datetime.now(tz=timezone(timedelta(hours=8))).strftime(
         "%Y-%m-%d %H:%M:%S"
