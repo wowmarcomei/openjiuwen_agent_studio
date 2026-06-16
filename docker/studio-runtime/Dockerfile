@@ -27,6 +27,7 @@ RUN pip3 config set global.index-url https://mirrors.aliyun.com/pypi/simple/ \
     && rm -rf ${PACKAGES_HOME}/future/backports/test
 
 # 再复制应用代码（变更频率高，放在依赖安装之后）
+COPY agent_builder/ $SERVICE_HOME/app/agent_builder/
 COPY agent_runtime/ $SERVICE_HOME/app/agent_runtime/
 COPY jiuwen/ $SERVICE_HOME/app/jiuwen/
 COPY agent_builder/ $SERVICE_HOME/app/agent_builder/
@@ -39,6 +40,7 @@ RUN mkdir -p $SERVICE_HOME/bin \
     && mkdir -p $SERVICE_HOME/tls \
     && mkdir -p /opt/cloud/logs \
     && mkdir -p /opt/cloud/tool \
+    && mkdir -p /opt/tmp/agent \
     && mkdir -p /opt/cloud/logs/agent-runtime/run \
     && touch /opt/cloud/logs/agent-runtime/run/agent-runtime.pid \
     && touch /opt/cloud/logs/agent-runtime/run/agent-runtime_access.log \
@@ -49,6 +51,7 @@ RUN mkdir -p $SERVICE_HOME/bin \
     && chmod 700 $SERVICE_HOME/.. \
     && chown -R service:service /home \
     && chown -R service:service /opt/cloud \
+    && chown -R service:service /opt/tmp/agent \
     && chmod 755 /home
 
 # 定义定时任务需要的权限
