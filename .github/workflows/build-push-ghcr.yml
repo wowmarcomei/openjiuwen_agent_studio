@@ -31,6 +31,9 @@ jobs:
       - name: Install pnpm
         run: npm install -g pnpm@8.13.1
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -149,6 +152,8 @@ jobs:
           cp -rf agent-runtime/agent_runtime docker/studio-runtime/agent_runtime
           rm -rf docker/studio-runtime/jiuwen
           cp -rf agent-runtime/jiuwen docker/studio-runtime/jiuwen
+          rm -rf docker/studio-runtime/agent_builder
+          cp -rf agent-runtime/agent_builder docker/studio-runtime/agent_builder
           rm -rf docker/studio-runtime/tests
           cp -rf agent-runtime/tests docker/studio-runtime/tests
           cp -f agent-runtime/requirements.txt docker/studio-runtime/requirements.txt
@@ -161,6 +166,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: docker/studio-manager
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: |
             ${{ steps.image_config.outputs.ghcr_repository }}/studio-manager:${{ steps.image_config.outputs.image_tag }}
@@ -174,6 +180,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: docker/studio-service
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: |
             ${{ steps.image_config.outputs.ghcr_repository }}/studio-service:${{ steps.image_config.outputs.image_tag }}
@@ -187,6 +194,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: docker/studio-console
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: |
             ${{ steps.image_config.outputs.ghcr_repository }}/studio-console:${{ steps.image_config.outputs.image_tag }}
@@ -200,6 +208,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: docker/studio-runtime
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: |
             ${{ steps.image_config.outputs.ghcr_repository }}/studio-runtime:${{ steps.image_config.outputs.image_tag }}

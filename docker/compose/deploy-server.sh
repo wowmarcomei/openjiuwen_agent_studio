@@ -4,7 +4,11 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 COMPOSE_FILE="$SCRIPT_DIR/docker-compose-server.yml"
 ENV_FILE="$SCRIPT_DIR/.env.server"
-PROJECT_NAME="openjiuwen-server"
+# project 名与 docker compose 默认值(目录名)保持一致,确保脚本能接管已存在的容器。
+# 否则 stop/down 只作用于 "openjiuwen-server" project,管不到此前用裸 docker compose
+# (默认 project=目录名,即 "compose")起的服务,出现 stop 后容器仍在运行的情况。
+# 如需自定义,可通过环境变量 COMPOSE_PROJECT_NAME 覆盖。
+PROJECT_NAME="${COMPOSE_PROJECT_NAME:-$(basename "$SCRIPT_DIR")}"
 
 INFRA_SERVICES=(mysql redis minio)
 APP_SERVICES=(studio-manager studio-service studio-runtime studio-console)
@@ -339,8 +343,55 @@ start_services() {
 stop_services() {
     log_info "Stopping services..."
     cd "$SCRIPT_DIR"
-    compose down
+    # --remove-orphans: 顺带清理本 project 下可能残留的孤儿容器
+    compose down --remove-orphans
     log_info "Services stopped"
+}
+
+# 彻底清理:删除容器、网络、卷(以及可选的镜像)。卷被删意味着数据库等持久化数据丢失,不可逆。
+clean_all() {
+    local mode="${1:-data}"
+    local down_flags="-v --remove-orphans"
+
+    if [ "$mode" = "images" ] || [ "$mode" = "all" ]; then
+        down_flags="$down_flags --rmi all"
+    elif [ "$mode" != "data" ]; then
+        log_error "Unknown clean target '$mode'. Usage: $0 clean [data|images|all]"
+        exit 1
+    fi
+
+    log_warn "============================================================"
+    log_warn " 即将删除 project '$PROJECT_NAME' 的资源 (不可逆):"
+    log_warn "   - 容器 / 网络 / 卷 (mysql_data, minio_data 等数据将丢失)"
+    if [ "$mode" = "images" ] || [ "$mode" = "all" ]; then
+        log_warn "   - 镜像 (下次部署需重新拉取)"
+    else
+        log_warn "   - 镜像默认保留"
+    fi
+    log_warn "============================================================"
+
+    # 破坏性操作:默认要求交互确认;设置 FORCE_CLEAN=yes 可跳过(供脚本/CI 调用)
+    if [ "${FORCE_CLEAN:-}" != "yes" ]; then
+        local confirm=""
+        if ! read -r -p "输入 YES 确认彻底清理: " confirm; then
+            log_warn "非交互环境或读取失败,已取消。设置 FORCE_CLEAN=yes 可跳过确认。"
+            return 0
+        fi
+        if [ "$confirm" != "YES" ]; then
+            log_info "已取消,未删除任何内容"
+            return 0
+        fi
+    fi
+
+    log_info "Removing containers, networks and volumes..."
+    cd "$SCRIPT_DIR"
+    compose down $down_flags
+
+    log_info "============================================================"
+    log_info " 清理完成 (容器 + 网络 + 卷)"
+    [ "$mode" = "images" ] || [ "$mode" = "all" ] && log_info " 镜像已一并删除"
+    log_info " 重新部署: $0 start"
+    log_info "============================================================"
 }
 
 restart_services() {
@@ -374,12 +425,13 @@ update_services() {
 }
 
 print_usage() {
-    echo "Usage: $0 {infra|init-db|start|stop|restart|pull|update|logs [service]|status|verify|all}"
+    echo "Usage: $0 {infra|init-db|start|stop|restart|pull|update|clean [data|images|all]|logs [service]|status|verify|all}"
     echo ""
     echo "  infra   - Start MySQL, Redis and MinIO, then run init-db"
     echo "  init-db - Initialize the database schema bootstrap and MinIO bucket"
     echo "  start   - Run init-db, start all services, and verify HTTP endpoints"
-    echo "  stop    - Stop all services"
+    echo "  stop    - Stop all services (keeps volumes/data)"
+    echo "  clean   - Remove containers, networks and VOLUMES (data lost). Optional: clean images|all"
     echo "  restart - Restart all services and verify HTTP endpoints"
     echo "  pull    - Pull configured Docker images"
     echo "  update  - Pull images, restart services, and verify HTTP endpoints"
@@ -408,6 +460,10 @@ case "${1:-}" in
     stop)
         check_docker_prerequisites
         stop_services
+        ;;
+    clean)
+        check_docker_prerequisites
+        clean_all "${2:-}"
         ;;
     restart)
         check_runtime_prerequisites

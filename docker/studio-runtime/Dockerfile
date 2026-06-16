@@ -29,6 +29,7 @@ RUN pip3 config set global.index-url https://mirrors.aliyun.com/pypi/simple/ \
 # 再复制应用代码（变更频率高，放在依赖安装之后）
 COPY agent_runtime/ $SERVICE_HOME/app/agent_runtime/
 COPY jiuwen/ $SERVICE_HOME/app/jiuwen/
+COPY agent_builder/ $SERVICE_HOME/app/agent_builder/
 COPY tests/ $SERVICE_HOME/app/tests/
 COPY bin/ $SERVICE_HOME/bin/
 
