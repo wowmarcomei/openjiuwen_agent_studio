@@ -4,8 +4,10 @@
 """This module contains open utilities — CacheUtils (LRU + Redis) and IR loading."""
 
 import builtins
+import copy
 import importlib
 import io
+import json
 import os
 import pickle
 import time
@@ -20,12 +22,21 @@ from jiuwen.common.exception.base import JiuWenBaseException
 from jiuwen.common.exception.status_code import StatusCode
 from jiuwen.common.log.base import logger
 from jiuwen.common.utils.utils import safe_json_loads_raise_exception
+from openjiuwen.core.common.logging import workflow_logger
 
 from jiuwen.serve.common.logger.request_logger import log_function_timing
 
 
 class CacheUtils:
-    """内存+Redis二级缓存"""
+    """内存+Redis二级缓存
+
+    Args:
+        return_copy: 为 True 时，所有读取方法（get/aget/aget_with_source）返回
+            数据的 copy.deepcopy，防止下游代码修改缓存中的原始对象。
+            适用于缓存可变 dict（如 IR JSON）的场景。
+            为 False 时（默认）直接返回引用，适用于缓存不可变数据或
+            Python 对象实例（Agent、AgentGroupConfig 等）的场景。
+    """
 
     def __init__(
         self,
@@ -34,6 +45,7 @@ class CacheUtils:
         cache_name: str,
         memory_ttl: int = -1,
         redis_ttl: int = -1,
+        return_copy: bool = False,
     ):
         self.memory_cache = LRUCache(capacity)
         self._redis_cache = None
@@ -42,6 +54,7 @@ class CacheUtils:
         self.cache_name = cache_name
         self.memory_ttl = memory_ttl
         self.redis_ttl = redis_ttl
+        self.return_copy = return_copy
 
     @property
     def redis_cache(self):
@@ -103,7 +116,7 @@ class CacheUtils:
             if value is not None:
                 logger.info(f"memory hit {key} in {self.cache_name} memory")
                 self._update_memory_cache(unique_key, value)
-                return value
+                return self._safe_return(value)
 
             value = await self.async_redis_cache.get(unique_key)
             if value is not None:
@@ -115,7 +128,7 @@ class CacheUtils:
                     f"redis hit, put {key} in {self.cache_name} memory, "
                     f"size {self.memory_cache.currsize}/{self.memory_cache.maxsize}"
                 )
-            return value
+            return self._safe_return(value)
         except Exception as e:
             logger.error(f"cache get error, exception {e}", exc_info=True)
             return None
@@ -127,7 +140,7 @@ class CacheUtils:
             value = self._get_from_memory_cache(unique_key)
             if value is not None:
                 logger.info(f"memory hit {key} in {self.cache_name} memory")
-                return value
+                return self._safe_return(value)
 
             value = self.redis_cache.get(unique_key)
             if value is not None:
@@ -139,7 +152,7 @@ class CacheUtils:
                     f"redis hit, put {key} in {self.cache_name} memory, "
                     f"size {self.memory_cache.currsize}/{self.memory_cache.maxsize}"
                 )
-            return value
+            return self._safe_return(value)
         except Exception as e:
             logger.error(f"cache get error, exception {e}", exc_info=True)
             return None
@@ -201,20 +214,56 @@ class CacheUtils:
         """生成key"""
         return f"agent_runtime:{self.cache_name}:{key}"
 
+    def _safe_return(self, value: Any) -> Any:
+        """根据 return_copy 配置决定返回原始引用还是深拷贝。
+
+        对于缓存可变 dict（IR JSON、workflow spec）的场景，return_copy=True
+        可防止下游代码修改缓存中的原始对象，避免缓存污染。
+        """
+        if value is None or not self.return_copy:
+            return value
+        return copy.deepcopy(value)
+
+    async def aget_with_source(self, key: str) -> tuple[Any, str]:
+        """异步按层级查找缓存，返回 (value, source)。
+
+        source 为 'memory' / 'redis' / 'obs'，用于性能日志区分缓存来源。
+        未命中任何缓存时返回 (None, '')，调用方需自行从存储加载。
+        """
+        unique_key = self._generate_unique_key(key)
+
+        # memory 缓存
+        value = self._get_from_memory_cache(unique_key)
+        if value is not None:
+            self._update_memory_cache(unique_key, value)
+            return self._safe_return(value), "memory"
+
+        # redis 缓存
+        value = await self.async_redis_cache.get(unique_key)
+        if value is not None:
+            value = deserialize_object(value) if self.should_serialize else value
+            self._update_memory_cache(unique_key, value)
+            return self._safe_return(value), "redis"
+
+        return None, ""
+
 
 # 缓存队列实例
+# IR / workflow 缓存存储的是可变 dict，开启 return_copy 防止下游修改污染缓存
 cache_ir_queue = CacheUtils(
     capacity=settings.cache.max_ir_cache_num,
     should_serialize=True,
     cache_name="ir",
     memory_ttl=settings.cache.mem_cache_ttl_seconds,
     redis_ttl=settings.cache.cache_ttl_seconds,
+    return_copy=True,
 )
 cache_workflow_queue = CacheUtils(
     capacity=settings.cache.max_workflow_cache_num,
     should_serialize=True,
     cache_name="workflow",
     redis_ttl=settings.cache.cache_ttl_seconds,
+    return_copy=True,
 )
 cache_agent_queue = CacheUtils(
     capacity=settings.cache.max_agent_cache_num,
@@ -236,23 +285,51 @@ cache_intent_rule_queue = CacheUtils(
 )
 
 
+def _log_ir_content(source: str, path: str, ir_data: dict):
+    """以 DEBUG 级别输出 IR 内容的 JSON 日志。"""
+    try:
+        _ir_json = json.dumps(ir_data, ensure_ascii=False, default=str)
+        workflow_logger.debug(
+            f"IR content from {source}: path={path}, size={len(_ir_json)} bytes, content={_ir_json}"
+        )
+    except Exception as e:
+        logger.warning("Failed to log IR content: source=%s, path=%s, error=%s", source, path, e)
+
+
 @log_function_timing
 async def async_ir_load(path: str) -> dict:
     """异步加载IR内容，支持任意Python对象缓存。
 
-    查找顺序：L1 内存 → L2 Redis → L3 OBS/S3
+    查找顺序：memory → redis → obs
+    性能日志格式: ir_load|{ms}|{memory|redis|obs}
     """
+    from openjiuwen.core.common.logging import performance_logger
+
+    t_start = time.perf_counter()
     logger.info("Async Loading IR content from %s", path)
 
-    ir_value = await cache_ir_queue.aget(path)
-    if ir_value:
-        logger.info("Cache HIT! Process %d async got cached data: %s", os.getpid(), path)
+    ir_value, source = await cache_ir_queue.aget_with_source(path)
+    if ir_value is not None:
+        if source == "memory":
+            logger.info("Cache HIT! Process %d async got cached data: %s", os.getpid(), path)
+        else:
+            logger.info(
+                "Redis HIT! Process %d async got cached data: %s, "
+                "memory size %d/%d",
+                os.getpid(), path,
+                cache_ir_queue.memory_cache.currsize, cache_ir_queue.memory_cache.maxsize,
+            )
+        _log_ir_content(source, path, ir_value)
+        performance_logger.info(f"ir_load|{round((time.perf_counter() - t_start) * 1000)}|{source}")
         return ir_value
 
+    # obs 存储
     logger.info("Cache MISS! Process %d async loading from OBS: %s", os.getpid(), path)
     from agent_runtime.serve.apis.orchestration import _load_ir_json
 
     ir_data = await _load_ir_json(path)
+
+    _log_ir_content("obs", path, ir_data)
 
     ir_data["ir_path"] = path
     ir_data["is_published"] = is_ir_published(path)
@@ -261,6 +338,7 @@ async def async_ir_load(path: str) -> dict:
         await cache_ir_queue.aput(path, ir_data)
         logger.info("Process %d async cached data: %s", os.getpid(), path)
 
+    performance_logger.info(f"ir_load|{round((time.perf_counter() - t_start) * 1000)}|obs")
     return ir_data
 
 
@@ -275,6 +353,7 @@ def ir_load(path: str) -> dict:
     ir_value = cache_ir_queue.get(path)
     if ir_value:
         logger.info("Cache HIT! Process %d got cached data: %s", os.getpid(), path)
+        _log_ir_content("cache", path, ir_value)
         return ir_value
 
     logger.info("Cache MISS! Process %d loading from OBS: %s", os.getpid(), path)
@@ -287,6 +366,8 @@ def ir_load(path: str) -> dict:
             error_code=StatusCode.IR_DATA_JSON_LOAD_FAILED.code,
             message=StatusCode.IR_DATA_JSON_LOAD_FAILED.errmsg
         ) from e
+
+    _log_ir_content("obs", path, ir_data)
 
     ir_data["ir_path"] = path
     ir_data["is_published"] = is_ir_published(path)

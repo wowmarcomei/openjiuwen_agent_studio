@@ -50,43 +50,14 @@ env/
 
 .codemate
 /agent-runtime/open_lumina_engine.egg-info
-/agent-runtime/open_agentBuilder_engine.egg-info
 /agent-runtime/.venv
 /agent-runtime/logs
 /agent-runtime/agent_builder/nl_to_agent/adapter/logs/*
 /agent-runtime/agent_builder/serve/logs/*
+/agent-runtime/open_agentBuilder_engine.egg-info
 *.mmap
 
-# Python
-*.py[cod]
-*$py.class
-*.cpython*
-*.pyc
-*.pyo
-*.pyd
-.Python
-*.so
-*.egg
-*.egg-info/
-dist/
-build/
+### Python venv ###
 .venv/
 venv/
-ENV/
-env.bak/
-pip-log.txt
-pip-delete-this-directory.txt
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage*
-coverage.xml
-*.cover
-.hypothesis/
-.tox/
 __pycache__/
-
-# Node
-node_modules/
-.npm
-.yarn/

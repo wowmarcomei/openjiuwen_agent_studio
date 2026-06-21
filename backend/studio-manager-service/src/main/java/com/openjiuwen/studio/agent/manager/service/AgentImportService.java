@@ -32,6 +32,7 @@ import com.openjiuwen.studio.agent.manager.dto.McpServerReference;
 import com.openjiuwen.studio.agent.manager.dto.ResourceVersionInfo;
 import com.openjiuwen.studio.agent.manager.dto.ToolReference;
 import com.openjiuwen.studio.agent.manager.dto.WorkflowReference;
+import com.openjiuwen.studio.agent.manager.dto.WorkflowNodeVO;
 import com.openjiuwen.studio.agent.manager.dto.WorkflowVO;
 import com.openjiuwen.studio.agent.manager.entity.Agent;
 import com.openjiuwen.studio.agent.manager.entity.MappingEntity;
@@ -218,6 +219,10 @@ public class AgentImportService {
             // 逐行读取文件中的jsonl配置
             while (StringUtils.isNotEmpty(line = bufferedReader.readLine())) {
                 ImportInfo importInfo = jacksonObjectMapper.readValue(line, ImportInfo.class);
+                if (importInfo.getOrder() == 404) {
+                    log.error("the file exist unsupported resource: {}", importInfo.getResourceType());
+                    throw new AgentStudioException(StudioError.UNSUPPORTED_RESOURCE_IMPORT, importInfo.getResourceType());
+                }
                 if (!Strings.CS.equals(importInfo.getResourceType(), CommonConstant.EXPORT_V2_TYPE)) {
                     resourceList.add(importInfo);
                 }
@@ -226,6 +231,8 @@ public class AgentImportService {
                 }
             }
 
+        } catch (AgentStudioException e) {
+            throw e;
         } catch (Exception e) {
             log.error("listImportFile file:{}, error: {}", i18nUtil.getMessage(StudioError.FILE_RESOLVE_FILE),
                 e.getMessage());
@@ -1254,6 +1261,7 @@ public class AgentImportService {
             case TOOL -> handleWorkflowPlugin(result, workflowVO);
             case MCP -> handleWorkflowNoVersionNode(result, workflowVO);
             case WORKFLOW -> handleWorkflowVersionNode(result, workflowVO);
+            case FUNCTIONGRAPH -> handleWorkflowFunction(result, workflowVO);
         }
         parentResource.setDsl(workflowVO);
     }
@@ -1294,7 +1302,7 @@ public class AgentImportService {
         }
         workflowVO.getNodes()
             .stream()
-            .filter(v -> Strings.CS.equalsAny(v.getType(), NodeType.PLUGIN.getType(), v.getType(),
+            .filter(v -> Strings.CS.equalsAny(v.getType(), NodeType.PLUGIN.getType(),
                 NodeType.AGENT.getType()))
             .forEach(node -> {
                 if (Strings.CS.equals(node.getType(), NodeType.PLUGIN.getType())) {
@@ -1306,10 +1314,11 @@ public class AgentImportService {
                         return;
                     }
                     JSONArray plugins = JSONArray.from(config.get("plugins"));
-                    plugins.forEach(p -> {
-                        Map<String, Object> plugin = JsonUtils.objectToClass(p);
+                    for (int i = 0; i < plugins.size(); i++) {
+                        Map<String, Object> plugin = JsonUtils.objectToClass(plugins.get(i));
                         handleVersionResource(result, plugin);
-                    });
+                        plugins.set(i, plugin);
+                    }
                     config.put("plugins", plugins);
                 }
             });
@@ -1322,10 +1331,111 @@ public class AgentImportService {
         }
         workflowVO.getNodes()
             .stream()
-            .filter(v -> Strings.CS.equalsAny(v.getType(), NodeType.WORKFLOW.getType()))
+            .filter(v -> Strings.CS.equalsAny(v.getType(), NodeType.WORKFLOW.getType(),
+                NodeType.PARAM_EXTRACTION.getType(), NodeType.INTENT_DETECTION_CONTAINER.getType()))
             .forEach(node -> {
-                handleVersionResource(result, node.getConfigs());
+                if (Strings.CS.equals(node.getType(), NodeType.WORKFLOW.getType())) {
+                    handleVersionResource(result, node.getConfigs());
+                } else if (Strings.CS.equals(node.getType(), NodeType.PARAM_EXTRACTION.getType())) {
+                    handleParamExtractionNode(result, node.getConfigs());
+                } else if (Strings.CS.equals(node.getType(), NodeType.INTENT_DETECTION_CONTAINER.getType())) {
+                    handleIntentDetectionNode(result, node);
+                }
             });
+    }
+
+    @SuppressWarnings("unchecked")
+    private void handleParamExtractionNode(ImportResourceResult result, Map<String, Object> configs) {
+        if (MapUtils.isEmpty(configs)) {
+            return;
+        }
+        // Update processing_workflows in domain_objects
+        Object domainObjectsObj = configs.get("domain_objects");
+        if (domainObjectsObj instanceof List<?> domainObjects) {
+            List<Object> updatedDomainObjects = new ArrayList<>();
+            for (Object doItem : domainObjects) {
+                Map<String, Object> domainObjectMap = JsonUtils.objectToClassType(doItem, Map.class);
+                if (domainObjectMap == null) {
+                    updatedDomainObjects.add(doItem);
+                    continue;
+                }
+                Object processingWorkflowsObj = domainObjectMap.get("processing_workflows");
+                if (processingWorkflowsObj instanceof List<?> processingWorkflows) {
+                    List<Object> updatedProcessingWorkflows = new ArrayList<>();
+                    for (Object pw : processingWorkflows) {
+                        Map<String, Object> pwMap = JsonUtils.objectToClassType(pw, Map.class);
+                        if (pwMap != null) {
+                            updateSubWorkflowConfig(result, pwMap);
+                            updatedProcessingWorkflows.add(pwMap);
+                        } else {
+                            updatedProcessingWorkflows.add(pw);
+                        }
+                    }
+                    domainObjectMap.put("processing_workflows", updatedProcessingWorkflows);
+                }
+                updatedDomainObjects.add(domainObjectMap);
+            }
+            configs.put("domain_objects", updatedDomainObjects);
+        }
+        // Update extension_workflows
+        Object extensionWorkflowsObj = configs.get("extension_workflows");
+        if (extensionWorkflowsObj instanceof List<?> extensionWorkflows) {
+            List<Object> updatedExtensionWorkflows = new ArrayList<>();
+            for (Object ew : extensionWorkflows) {
+                Map<String, Object> ewMap = JsonUtils.objectToClassType(ew, Map.class);
+                if (ewMap != null) {
+                    updateSubWorkflowConfig(result, ewMap);
+                    updatedExtensionWorkflows.add(ewMap);
+                } else {
+                    updatedExtensionWorkflows.add(ew);
+                }
+            }
+            configs.put("extension_workflows", updatedExtensionWorkflows);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void handleIntentDetectionNode(ImportResourceResult result, WorkflowNodeVO node) {
+        if (node.getBranches() == null) {
+            return;
+        }
+        for (var branch : node.getBranches()) {
+            Map<String, Object> branchConfigs = branch.getConfigs();
+            if (branchConfigs == null || branchConfigs.get("workflow_id") == null
+                || !Strings.CS.equals(branchConfigs.get("workflow_id").toString(), result.getId())) {
+                continue;
+            }
+            if (StringUtils.isNotEmpty(result.getNewId())) {
+                branchConfigs.put("workflow_id", result.getNewId());
+            }
+            if (StringUtils.isNotEmpty(result.getNewName()) && branchConfigs.containsKey("workflow_name")) {
+                branchConfigs.put("workflow_name", result.getNewName());
+            }
+            if (StringUtils.isNotEmpty(result.getNewVersion()) && branchConfigs.containsKey("workflow_version_id")
+                && Strings.CS.equals(branchConfigs.get("workflow_version_id").toString(), result.getVersion())) {
+                branchConfigs.put("workflow_version_id", result.getNewVersion());
+            }
+        }
+    }
+
+    private void updateSubWorkflowConfig(ImportResourceResult result, Map<String, Object> config) {
+        if (MapUtils.isEmpty(config) || config.get("id") == null) {
+            return;
+        }
+        if (!Strings.CS.equals(config.get("id").toString(), result.getId())) {
+            return;
+        }
+        if (StringUtils.isNotEmpty(result.getNewId())) {
+            config.put("id", result.getNewId());
+        }
+        if (StringUtils.isNotEmpty(result.getNewName())) {
+            config.put("name", result.getNewName());
+        }
+        if (config.get("version_id") != null
+            && Strings.CS.equals(config.get("version_id").toString(), result.getVersion())
+            && StringUtils.isNotEmpty(result.getNewVersion())) {
+            config.put("version_id", result.getNewVersion());
+        }
     }
 
     private void handleVersionResource(ImportResourceResult result, Map<String, Object> config) {

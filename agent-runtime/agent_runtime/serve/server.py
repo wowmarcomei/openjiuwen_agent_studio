@@ -1,9 +1,20 @@
+# -*- coding: UTF-8 -*-
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 """
 OLE FastAPI server — lightweight version of jiwen-server/serve/server.py
 """
 
 import os
 from contextlib import asynccontextmanager
+
+# 在所有 jiuwen import 之前，先接管日志配置
+# 这样 jiuwen SingletonLogger 检测到标志后不再添加自己的 handler，避免重复日志
+from agent_runtime.common.logging_context import (
+    install_log_formatter_patch,
+    install_request_id_log_record_factory,
+)
+install_request_id_log_record_factory()
+install_log_formatter_patch()
 
 # 在任何 jiuwen OBS 操作之前，补丁 Crypt 类使用明文解密
 # agent_runtime 本地调试环境 SK 为明文存储，而 jiuwen Crypt 默认实现抛异常
@@ -23,14 +34,12 @@ def _plain_decrypt(encrypt_str: str):
 JiuWenCrypt.encrypt = staticmethod(_plain_encrypt)
 JiuWenCrypt.decrypt = staticmethod(_plain_decrypt)
 
+from agent_runtime.storage import S3StorageProvider
+
 from agent_runtime.common import settings
 from agent_runtime.common.checkpointer_config import build_redis_checkpointer_config
 from agent_runtime.common.exception.errors import AgentBuilderError
-from agent_runtime.common.logging_context import (
-    COMMON_LOG_FORMAT,
-    install_log_formatter_patch,
-    install_request_id_log_record_factory,
-)
+from agent_runtime.common.logging_context import COMMON_LOG_FORMAT
 from agent_runtime.common.redis_manager import RedisClientManager
 from agent_runtime.context.middleware import RequestContextMiddleware
 from agent_runtime.memory.adapter.ltm_manager import init_ltm
@@ -63,9 +72,7 @@ from openjiuwen.extensions.sys_operation.sandbox import providers as _  # noqa: 
 
 # 导入 redis checkpointer 模块以触发 @CheckpointerFactory.register("redis") 装饰器
 from openjiuwen.extensions.checkpointer.redis import checkpointer as _  # noqa: F401
-
-install_request_id_log_record_factory()
-install_log_formatter_patch()
+from agent_runtime.runner.fast_redis_checkpointer import FastRedisCheckpointer
 
 prompt_dir = os.path.join(
     os.path.dirname(__file__), "..", "..", "jiuwen", "prompt", "template", "default"
@@ -83,7 +90,8 @@ from agent_runtime.extension.workflow_node.flow_code import FlowCode, JIUWEN_COD
 component_class_pool.register_component_class(JIUWEN_CODE_TYPE, FlowCode)
 logger.info("Registered workflow component: jiuwen.code")
 
-apps_map = [execution_app, prompt_manage_app, user_variable_router, memory_internal_router]
+# FastAPI routers must be included BEFORE Flask app mount (Flask catches all routes)
+apps_map = [execution_app, user_variable_router, memory_internal_router, prompt_manage_app]
 
 
 @asynccontextmanager
@@ -98,6 +106,7 @@ async def lifespan(app: FastAPI):  # noqa: redefined-outer-name
             "format": COMMON_LOG_FORMAT,
             "loggers": {
                 "workflow": {"level": workflow_log_level},
+                "performance": {"level": "INFO"},
                 "sys_operation": {
                     "level": "WARNING"
                 },  # 关闭 sys_operation 的 INFO 日志
@@ -133,8 +142,26 @@ async def lifespan(app: FastAPI):  # noqa: redefined-outer-name
     # 创建并设置 Redis Checkpointer 为默认
     checkpointer_config = build_redis_checkpointer_config()
     redis_checkpointer = await CheckpointerFactory.create(checkpointer_config)
-    CheckpointerFactory.set_default_checkpointer(redis_checkpointer)
-    logger.info("Redis checkpointer initialized and set as default")
+
+    if settings.checkpointer.fast_checkpointer_enabled:
+        fast_checkpointer = FastRedisCheckpointer(
+            delegate=redis_checkpointer,
+            redis_client=redis_client,
+            ttl_seconds=settings.checkpointer.sentinel_ttl_seconds,
+        )
+        CheckpointerFactory.set_default_checkpointer(fast_checkpointer)
+        logger.info("FastRedisCheckpointer initialized and set as default (scan_iter bypass enabled)")
+    else:
+        CheckpointerFactory.set_default_checkpointer(redis_checkpointer)
+        logger.info("Redis checkpointer initialized and set as default (fast checkpointer disabled)")
+
+    # 初始化异步 S3 存储客户端
+    try:
+        s3_provider = S3StorageProvider.instance()
+        await s3_provider.initialize()
+        logger.info("S3 async storage client initialized")
+    except Exception as e:
+        logger.warning(f"S3 async storage client initialization failed (non-critical): {e}")
 
     # 注册 flow_code 专用的 SysOperation（local mode）
     sys_op_id = "flow_code_sys_op"
@@ -180,6 +207,13 @@ async def lifespan(app: FastAPI):  # noqa: redefined-outer-name
     try:
         yield
     finally:
+        # 关闭异步 S3 存储客户端
+        try:
+            s3_provider = S3StorageProvider.instance()
+            await s3_provider.close()
+        except Exception as e:
+            logger.warning(f"S3 storage client close failed (non-critical): {e}")
+
         # 关闭 Redis 客户端
         await redis_mgr.close()
         logger.info("Redis client closed")

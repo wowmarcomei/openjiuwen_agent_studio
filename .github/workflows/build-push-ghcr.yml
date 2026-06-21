@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - mxh_dev
+  workflow_dispatch:
 
 jobs:
   build-and-push:

@@ -237,20 +237,19 @@ export class AgentBotPageComponent implements OnInit, OnDestroy {
       description: this.i18n.transform("agent_planning_mode_desc"),
       icon: "assets/agent/planning_mode.svg",
       value: AGENT_MODE_CODE.PLANNING_MODE,
-      showFn: () => this.isShowDREnter() // 当前规划模式暂时只上工行，与深度模式一样
-    },
-    {
-      name: this.i18n.transform("agent_mode_deep"),
-      description: this.i18n.transform("agent_mode_deep_description"),
-      icon: "assets/agent/deepResearch.svg",
-      value: AGENT_MODE_CODE.DEEP_MODE,
-      showFn: () => this.isShowDREnter()
+      showFn: () => true
     }
   ];
   agentMode = {
     [AGENT_MODE_CODE.GENERAL_MODE]: this.agentModeList[0],
     [AGENT_MODE_CODE.PLANNING_MODE]: this.agentModeList[1],
-    [AGENT_MODE_CODE.DEEP_MODE]: this.agentModeList[2]
+    [AGENT_MODE_CODE.DEEP_MODE]: {
+      name: this.i18n.transform("agent_mode_deep"),
+      description: this.i18n.transform("agent_mode_deep_description"),
+      icon: "assets/agent/deepResearch.svg",
+      value: AGENT_MODE_CODE.DEEP_MODE,
+      showFn: () => false
+    }
   };
   curAgentModeCode: AGENT_MODE_CODE;
   isShowAgentModeSelector: boolean = false;
@@ -1302,7 +1301,7 @@ export class AgentBotPageComponent implements OnInit, OnDestroy {
   public configTabActiveChange(id: string) {
     if (id === this.configHeaderTabs[1].id) {
       this.goToChannelPage();
-      this.triggerSettingModal.hide();
+      this.triggerSettingModal.close();
     }
     this.curActiveConfigTabId = id;
   }

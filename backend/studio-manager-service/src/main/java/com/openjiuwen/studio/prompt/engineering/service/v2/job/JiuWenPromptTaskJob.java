@@ -105,7 +105,7 @@ public class JiuWenPromptTaskJob implements Job {
 
     private static final String PROMPT_FEEDBACK_API = "/flask/v1/prompt/optimize_feedback";
 
-    @Value("${jiuwen.base-url:https://jiuwen-runtime.default.svc.cluster.local:31024}")
+    @Value("${jiuwen.base-url:}")
     private String jiuwenBaseUrl;
 
     @Resource(name = "remoteClientTemplate")
@@ -565,11 +565,9 @@ public class JiuWenPromptTaskJob implements Job {
         try {
             ModelServiceBase modelService = modelServiceMapper.queryById(config.getModel());
             if (modelService != null) {
-                String originalId = config.getModel();
                 config.setUrl(modelService.getApiUrl());
-                config.setModel(modelService.getModelName());
                 log.info("Enriched model config: id={}, modelName={}, url={}",
-                    originalId, modelService.getModelName(), config.getUrl());
+                    config.getModel(), modelService.getModelName(), config.getUrl());
                 if (StringUtils.isNotEmpty(modelService.getProviderId())) {
                     List<ProviderAuthMetadata> authList = providerAuthDataMapper
                         .selectProviderAuthData(projectId, workspaceId, modelService.getProviderId());
