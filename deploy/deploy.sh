@@ -156,21 +156,14 @@ check_docker_prerequisites() {
 
     if [ ! -f "$ENV_FILE" ]; then
         if [ -f "$SCRIPT_DIR/.env.template" ]; then
-            log_warn ".env not found, creating from template..."
+            log_info ".env not found, creating from template..."
             cp "$SCRIPT_DIR/.env.template" "$ENV_FILE"
-            log_error "Please edit $ENV_FILE before proceeding. Required:"
-            echo "  - IMAGE_SOURCE (ghcr / dockerhub / offline / custom)"
-            echo "  - Database: SPRING_DATASOURCE_URL / USERNAME / PASSWORD"
-            echo "  - Redis: REDIS_HOST / REDIS_PORT"
-            echo "  - Object storage: OBS_URL / OBS_BUCKET / OBS_AK / OBS_SK"
-            echo ""
-            echo "  Built-in infrastructure defaults work out of the box."
-            echo ""
-            echo "  Edit: vi $ENV_FILE"
+            log_info "Created $ENV_FILE with defaults (built-in infrastructure, IMAGE_SOURCE=ghcr)"
+            log_warn "If using private registry or external infrastructure, edit .env first: vi $ENV_FILE"
         else
             log_error ".env not found and no .env.template available"
+            missing=1
         fi
-        missing=1
     fi
 
     if [ $missing -eq 1 ]; then
