@@ -62,7 +62,11 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - agent-net
+      agent-net:
+        aliases:
+          # OBS SDK 默认使用 virtual-hosted-style，请求 host 为 <bucket>.<endpoint>
+          # 此 alias 使 DNS 能解析 <bucket>.minio → minio 容器，兼容 virtual-hosted-style
+          - ${OBS_BUCKET:-agent-builder}.minio
 
   minio-init:
     image: ${MINIO_MC_IMAGE:-minio/mc:latest}
