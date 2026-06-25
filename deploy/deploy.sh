@@ -322,7 +322,8 @@ container_is_ready() {
     local service="$1"
     local container_id state exit_code
 
-    container_id=$(compose ps -q "$service" 2>/dev/null || true)
+    # -a: 包含已停止/已退出的容器，否则一次性容器（如 minio-init）执行完毕后无法被检测到
+    container_id=$(compose ps -a -q "$service" 2>/dev/null || true)
     if [ -z "$container_id" ]; then
         return 1
     fi
