@@ -1,11 +1,9 @@
 name: Build & Push Docker Images
 
 on:
-  push:
-    branches:
-      - studio-2.0
+  workflow_dispatch:
 
-# 并发控制：同一分支多次推送只保留最新一次，取消进行中的旧构建（省额度）
+# 并发控制：同一分支多次手动触发只保留最新一次，取消进行中的旧构建（省额度）
 concurrency:
   group: build-push-${{ github.ref }}
   cancel-in-progress: true

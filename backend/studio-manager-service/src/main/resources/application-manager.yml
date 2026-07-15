@@ -107,6 +107,8 @@ spring:
 studio:
   operationLog:
     switch: ${studio_operationLog_switch:false}
+    # 审计日志参数敏感字段名正则，命中后对字段值做掩码处理
+    sensitiveFieldPattern: '${studio_operationLog_sensitiveFieldPattern:(?i)(?:.*(?:password|pwd|token|authorization|api[-_]?key|secret|credential|auth[-_]?(?:info|key|id|value|type|keys)|access[-_]?key|client[-_]?secret|iam[-_]?credentials|oauth[-_]?scope|app[-_]?code|iam[-_]?(?:ak|sk)).*|(?:ak|sk))}'
 
 server:
   port: 31111
@@ -285,14 +287,6 @@ model:
   # ========== 适配模型url ==========
   protocol:
     mapping: api.baichuan-ai.com#baichuan,open.bigmodel.cn#zhipu,dashscope.aliyuncs.com#qwen
-datasource:
-  ir-path: ${datasource_ir_path:datasource/ir}
-  column-template: ${datasource_column_template:}
-  check:
-    pool-size: ${datasource_check_pool_size:10}
-    timeout: ${datasource_check_timeout:25}
-  query:
-    max-length: ${datasource_query_max_length:5000}
 asset:
   app:
     free:
@@ -807,5 +801,3 @@ springdoc:
     enabled: false
   swagger-ui:
     enabled: false
-
-

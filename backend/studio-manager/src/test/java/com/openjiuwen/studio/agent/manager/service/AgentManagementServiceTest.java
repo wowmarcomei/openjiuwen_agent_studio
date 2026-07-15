@@ -49,7 +49,7 @@ import com.openjiuwen.studio.agent.manager.dto.AutoAddStudioResourceRequestBody;
 import com.openjiuwen.studio.agent.manager.dto.CreateAgentReq;
 import com.openjiuwen.studio.agent.manager.dto.CreateChannelReq;
 import com.openjiuwen.studio.agent.manager.dto.CreateVersionReq;
-import com.openjiuwen.studio.agent.manager.dto.DatasourceBatchDeleteRsp;
+import com.openjiuwen.studio.agent.manager.dto.BatchDeleteRsp;
 import com.openjiuwen.studio.agent.manager.dto.ExportMessagesParams;
 import com.openjiuwen.studio.agent.manager.dto.ExportParams;
 import com.openjiuwen.studio.agent.manager.dto.GetAgentVersionQo;
@@ -735,8 +735,6 @@ class AgentManagementServiceTest extends BaseTest {
                 new ListAgentLastVersionsQo().setOffset(0).setLimit(10).setId(Constants.TEST_AGENT_ID));
         Assertions.assertEquals(1, agentVersionListRsp.getCount());
 
-        assertTrue(redisClient.exists(String.format("AgentBuilder:agent:metadata:%s:latest", Constants.TEST_AGENT_ID)));
-
         AgentInfo releaseAgent = agentManagementService.getAgentVersion(Constants.TEST_PROJECT_ID,
             Constants.TEST_AGENT_ID, versionId, new GetAgentVersionQo().setWorkspaceId(Constants.TEST_WORKSPACE_ID));
         assertNotNull(releaseAgent);
@@ -745,8 +743,6 @@ class AgentManagementServiceTest extends BaseTest {
         versionListRsp = agentManagementService.listAgentVersions(Constants.TEST_PROJECT_ID, Constants.TEST_AGENT_ID,
             new ListAgentVersionsQo().setWorkspaceId("default"));
         assertEquals(0, versionListRsp.getCount());
-
-        assertFalse(redisClient.exists(String.format("AgentBuilder:agent:metadata:%s:latest", Constants.TEST_AGENT_ID)));
     }
 
 
@@ -777,8 +773,6 @@ class AgentManagementServiceTest extends BaseTest {
                 new ListAgentLastVersionsQo().setOffset(0).setLimit(10).setId(Constants.TEST_AGENT_ID));
         Assertions.assertEquals(1, agentVersionListRsp.getCount());
 
-        assertTrue(redisClient.exists(String.format("AgentBuilder:agent:metadata:%s:latest", Constants.TEST_AGENT_ID)));
-
         AgentInfo releaseAgent = agentManagementService.getAgentVersion(Constants.TEST_PROJECT_ID,
             Constants.TEST_AGENT_ID, versionId, new GetAgentVersionQo().setWorkspaceId(Constants.TEST_WORKSPACE_ID));
         assertNotNull(releaseAgent);
@@ -787,8 +781,6 @@ class AgentManagementServiceTest extends BaseTest {
         versionListRsp = agentManagementService.listAgentVersionsV1(Constants.TEST_PROJECT_ID, Constants.TEST_AGENT_ID,
             new ListAgentVersionsV1Qo().setWorkspaceId("default"));
         assertEquals(0, versionListRsp.getCount());
-
-        assertFalse(redisClient.exists(String.format("AgentBuilder:agent:metadata:%s:latest", Constants.TEST_AGENT_ID)));
     }
 
     @Test
@@ -1070,8 +1062,6 @@ class AgentManagementServiceTest extends BaseTest {
             agent.getAgentId(), new ListAgentVersionsQo().setWorkspaceId("default"));
         String versionId = versionListRsp.getVersionList().get(0).getVersionId();
 
-        assertTrue(redisClient.exists(String.format("AgentBuilder:agent:metadata:%s:latest", agent.getAgentId())));
-
         // create channel
         CreateChannelReq createChannelReq = new CreateChannelReq();
         createChannelReq.setVersionId(versionId);
@@ -1089,7 +1079,7 @@ class AgentManagementServiceTest extends BaseTest {
         createChannelReq.setChannelType(AGENT_BUILDER);
         channelInfo = agentManagementService.createAgentChannel(Constants.TEST_PROJECT_ID, agent.getAgentId(),
             Constants.TEST_WORKSPACE_ID, createChannelReq);
-        assertEquals("AgentBuilder", channelInfo.getChannelType());
+        assertEquals(AGENT_BUILDER, channelInfo.getChannelType());
     }
 
     @Test
@@ -1879,7 +1869,7 @@ class AgentManagementServiceTest extends BaseTest {
 
             );
         // 执行删除操作 - 只会删除存在的ID "123456789"
-        DatasourceBatchDeleteRsp response =
+        BatchDeleteRsp response =
             messageManagementService.deleteStructuredMessages(projectId, workspaceId, requests);
         // 验证响应结果 - 只有1个有效ID会被处理
         assertEquals(1, response.getCount(), "应返回1个有效ID的计数");
@@ -1888,7 +1878,7 @@ class AgentManagementServiceTest extends BaseTest {
 
         // 场景2: 空请求列表
         List<StructuredInfoRequestDelete> emptyRequests = Collections.emptyList();
-        DatasourceBatchDeleteRsp emptyResponse =
+        BatchDeleteRsp emptyResponse =
             messageManagementService.deleteStructuredMessages(projectId, workspaceId, emptyRequests);
 
         assertEquals(0, emptyResponse.getCount(), "空请求应返回0计数");
@@ -1899,7 +1889,7 @@ class AgentManagementServiceTest extends BaseTest {
                 new StructuredInfoRequestDelete().setId("").setCategory("typeY"),
                 new StructuredInfoRequestDelete().setId("  ").setCategory("typeZ"));
 
-        DatasourceBatchDeleteRsp invalidResponse =
+        BatchDeleteRsp invalidResponse =
             messageManagementService.deleteStructuredMessages(projectId, workspaceId, invalidRequests);
         assertEquals(0, invalidResponse.getCount(), "全无效请求应返回0计数");
         assertTrue(invalidResponse.getIds().isEmpty(), "全无效请求应返回空ID列表");

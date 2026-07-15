@@ -15,6 +15,7 @@ import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.openjiuwen.studio.agent.common.crypt.Ciphers;
 import com.openjiuwen.studio.agent.common.redis.RedisLock;
 import com.openjiuwen.studio.agent.common.redis.config.RedisClientConfig;
 import com.openjiuwen.studio.agent.common.redis.impl.RedisClientRedisson;
@@ -77,21 +78,25 @@ class RedisClientRedissonTest {
         }
     }
 
+    private RedisClientConfig newConfig() {
+        return new RedisClientConfig(new Ciphers(null, null));
+    }
+
     @Test
     void testConstructorAndConfigBranches() {
         // SingleServer
-        RedisClientConfig single = new RedisClientConfig();
+        RedisClientConfig single = newConfig();
         single.setRedisHost("127.0.0.1");
         single.setRedisPort(6379);
         new RedisClientRedisson(single);
 
         // ClusterServer
-        RedisClientConfig cluster = new RedisClientConfig();
+        RedisClientConfig cluster = newConfig();
         cluster.setClusterNodeList("127.0.0.1:7001");
         new RedisClientRedisson(cluster);
 
         // SentinelServer 及 NatMapper
-        RedisClientConfig sentinel = new RedisClientConfig();
+        RedisClientConfig sentinel = newConfig();
         sentinel.setNodeAddrList("127.0.0.1:26379");
         sentinel.setTargetPorts("6379");
         sentinel.setSentinelPorts("26379");
@@ -105,7 +110,7 @@ class RedisClientRedissonTest {
     void testAllRedisOperationsAndLambdaCoverage() throws Exception {
         // 初始化并捕获Config
         ArgumentCaptor<Config> configCaptor = ArgumentCaptor.forClass(Config.class);
-        RedisClientConfig clientConfig = new RedisClientConfig();
+        RedisClientConfig clientConfig = newConfig();
         clientConfig.setRedisHost("127.0.0.1");
         RedisClientRedisson client = new RedisClientRedisson(clientConfig);
 

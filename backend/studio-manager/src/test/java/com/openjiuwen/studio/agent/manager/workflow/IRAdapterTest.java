@@ -234,28 +234,6 @@ class IRAdapterTest extends BaseTest {
 
     @SneakyThrows
     @Test
-    public void testSqlNodeAdapter() {
-        String llmJson = TestUtil.getStringFromFile("classpath:flow_dsl/test_sql_flow_dsl.json");
-        Map<String, Object> metadata = new HashMap<>();
-        WorkflowVO workflowVO = JSON.parseObject(llmJson, WorkflowVO.class);
-        Map<String, Object> irConfig = irAdapterService.adaptWorkflow(workflowVO, metadata);
-        Assertions.assertEquals(TestUtil.getStringFromFile("classpath:flow_dsl/test_sql_flow_ir.json"),
-            JSON.toJSONString(irConfig, JSONWriter.Feature.WriteMapNullValue));
-    }
-
-    @SneakyThrows
-    @Test
-    public void testDataQueryNodeAdapter() {
-        String llmJson = TestUtil.getStringFromFile("classpath:flow_dsl/test_data_query_dsl.json");
-        Map<String, Object> metadata = new HashMap<>();
-        WorkflowVO workflowVO = JSON.parseObject(llmJson, WorkflowVO.class);
-        Map<String, Object> irConfig = irAdapterService.adaptWorkflow(workflowVO, metadata);
-        Assertions.assertEquals(TestUtil.getStringFromFile("classpath:flow_dsl/test_data_query_ir.json"),
-                JSON.toJSONString(irConfig, JSONWriter.Feature.WriteMapNullValue));
-    }
-
-    @SneakyThrows
-    @Test
     public void testStructuredMessagesNodeAdapter() {
         String llmJson = TestUtil.getStringFromFile("classpath:flow_dsl/test_structuredmessages_flow_dsl.json");
         Map<String, Object> metadata = new HashMap<>();
@@ -550,6 +528,7 @@ class IRAdapterTest extends BaseTest {
 
     @SneakyThrows
     @Test
+    @Sql(scripts = {"classpath:sql/memory_repo_setup_db.sql"}, executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
     public void testMemoryConfigAdapter() {
         String llmJson = TestUtil.getStringFromFile("classpath:flow_dsl/test_memory_config_flow_dsl.json");
         Map<String, Object> metadata = new HashMap<>();

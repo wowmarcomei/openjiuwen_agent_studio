@@ -3,7 +3,6 @@ package com.openjiuwen.studio.agent.manager.service;
 
 import com.openjiuwen.studio.agent.agentbase.service.KnowledgeBaseServiceImpl;
 import com.openjiuwen.studio.agent.common.redis.RedisClient;
-import com.openjiuwen.studio.agent.manager.config.IRAdapterConfig;
 import com.openjiuwen.studio.agent.manager.mapper.MappingMapper;
 import com.openjiuwen.studio.agent.manager.mapper.SkillMapper;
 import com.openjiuwen.studio.agent.manager.mapper.ToolCredentialMapper;
@@ -14,7 +13,6 @@ import com.openjiuwen.studio.agent.manager.service.nodes.ParamExtractionNodeServ
 import com.openjiuwen.studio.agent.manager.service.plugin.IPlugin;
 import com.openjiuwen.studio.agent.manager.service.plugin.impl.PluginBaseImpl;
 import com.openjiuwen.studio.agent.manager.service.workspace.WorkspaceMappingService;
-import com.openjiuwen.studio.agent.manager.workflow.jiuwen.adapt.IRAdapter;
 import com.openjiuwen.studio.common.service.service.EncryptionAdapter;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -38,7 +36,6 @@ class IrAdapterServiceTest {
     private SkillMapper skillMapper;
     private ParamExtractionNodeService paramExtractionNodeService;
     private WorkspaceMappingService workspaceMappingService;
-    private IRAdapter irAdapter;
     private EncryptionAdapter encryptionAdapter;
     private RedisClient redisClient;
 
@@ -57,7 +54,6 @@ class IrAdapterServiceTest {
         skillMapper = mock(SkillMapper.class);
         paramExtractionNodeService = mock(ParamExtractionNodeService.class);
         workspaceMappingService = mock(WorkspaceMappingService.class);
-        irAdapter = mock(IRAdapter.class);
         encryptionAdapter = mock(EncryptionAdapter.class);
         redisClient = mock(RedisClient.class);
 
@@ -67,14 +63,13 @@ class IrAdapterServiceTest {
         ReflectionTestUtils.setField(irAdapterService, "mgObsService", obsService);
         ReflectionTestUtils.setField(irAdapterService, "modelServiceManager", modelServiceManager);
         ReflectionTestUtils.setField(irAdapterService, "pluginService", pluginService);
-        ReflectionTestUtils.setField(irAdapterService, "pluginBase", pluginBase);
+        ReflectionTestUtils.setField(irAdapterService, "pluginBaseImpl", pluginBase);
         ReflectionTestUtils.setField(irAdapterService, "knowledgeBaseService", knowledgeBaseService);
         ReflectionTestUtils.setField(irAdapterService, "mcpServiceManager", mcpServiceManager);
         ReflectionTestUtils.setField(irAdapterService, "toolCredentialMapper", toolCredentialMapper);
         ReflectionTestUtils.setField(irAdapterService, "skillMapper", skillMapper);
         ReflectionTestUtils.setField(irAdapterService, "paramExtractionNodeService", paramExtractionNodeService);
         ReflectionTestUtils.setField(irAdapterService, "workspaceMappingService", workspaceMappingService);
-        ReflectionTestUtils.setField(irAdapterService, "irAdapter", irAdapter);
         ReflectionTestUtils.setField(irAdapterService, "encryptionAdapter", encryptionAdapter);
         ReflectionTestUtils.setField(irAdapterService, "redisClient", redisClient);
     }

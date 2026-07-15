@@ -54,9 +54,11 @@ import com.openjiuwen.studio.agent.agentbase.service.knowledgerepo.KnowledgeRepo
 import com.openjiuwen.studio.agent.agentbase.service.knowledgerepo.multiRetriveMerigingStrategy.RetrieveMergingStrategyContext;
 import com.openjiuwen.studio.agent.agentbase.service.resource.ResourceUsageFactory;
 import com.openjiuwen.studio.agent.agentbase.service.validate.ResourceValidateService;
+import com.openjiuwen.studio.agent.common.annotation.OperationLog;
 import com.openjiuwen.studio.agent.common.dto.knowledge.ChunkUtils;
 import com.openjiuwen.studio.agent.agentbase.utils.IconValidator;
 import com.openjiuwen.studio.agent.common.enums.KnowledgeSourceEnum;
+import com.openjiuwen.studio.agent.common.enums.OperationType;
 import com.openjiuwen.studio.agent.foundation.base.utils.JacksonUtils;
 import com.openjiuwen.studio.agent.agentbase.utils.ShareScopeValidUtil;
 import com.openjiuwen.studio.agent.agentbase.utils.TenantTypeUtil;
@@ -279,6 +281,13 @@ public class KnowledgeBaseServiceImpl implements IKnowledgeRepoManagementService
 
 
     @Override
+    @OperationLog(
+        operationType = OperationType.CREATE,
+        resourceType = "KnowledgeBase",
+        description = "接入第三方知识库",
+        resourceId = "-1",
+        resourceName = "body.knowledgeBaseConnectionId"
+    )
     public CreateExternalKnowledgeBaseResponseBody createExternalKnowledgeBase(String projectId, String workspaceId,
         CreateExternalKnowledgeBaseRequestBody body) {
         log.info("operation log projectId: {}, userId:{}, createExternalKnowledgeBase", projectId,
@@ -379,6 +388,13 @@ public class KnowledgeBaseServiceImpl implements IKnowledgeRepoManagementService
     }
 
     @Override
+    @OperationLog(
+        operationType = OperationType.CREATE,
+        resourceType = "KnowledgeBase",
+        description = "创建知识库",
+        resourceId = "-1",
+        resourceName = "body.displayName"
+    )
     public CreateKnowledgeRepoResponseBody createKnowledgeRepo(String projectId, String workspaceId,
         CreateKnowledgeRepoRequestBody body) {
         log.info("operation log projectId: {}, userId:{}, createKnowledgeBase", projectId,
@@ -510,6 +526,13 @@ public class KnowledgeBaseServiceImpl implements IKnowledgeRepoManagementService
     }
 
     @Override
+    @OperationLog(
+        operationType = OperationType.DELETE,
+        resourceType = "KnowledgeBase",
+        description = "删除知识库",
+        resourceId = "knowledgeBaseId",
+        resourceName = ""
+    )
     public DeleteOneResponseBody deleteKnowledgeRepo(String projectId, String knowledgeBaseId, String workspaceId) {
         log.info("operation log projectId: {}, userId:{}, deleteKnowledgeBase", projectId,
             RequestContextUtils.getRequestUserId());
@@ -666,6 +689,13 @@ public class KnowledgeBaseServiceImpl implements IKnowledgeRepoManagementService
     }
 
     @Override
+    @OperationLog(
+        operationType = OperationType.CREATE,
+        resourceType = "KnowledgeBase",
+        description = "创建知识库标签",
+        resourceId = "knowledgeBaseId",
+        resourceName = ""
+    )
     public CreateKnowledgeRepoTagsRsp createKnowledgeRepoTags(String projectId, String workspaceId,
         String knowledgeBaseId, CreateKnowledgeRepoTagsReq body) {
         // CUSTOM暂不支持标签创建
@@ -693,6 +723,13 @@ public class KnowledgeBaseServiceImpl implements IKnowledgeRepoManagementService
     }
 
     @Override
+    @OperationLog(
+        operationType = OperationType.DELETE,
+        resourceType = "KnowledgeBase",
+        description = "删除知识库标签",
+        resourceId = "knowledgeBaseId",
+        resourceName = ""
+    )
     public DeleteKnowledgeRepoTagsRsp deleteKnowledgeRepoTags(String projectId, String workspaceId,
         String knowledgeBaseId, String tagId, DeleteKnowledgeRepoTagsReq body) {
         // CUSTOM暂不支持标签创建
@@ -739,6 +776,13 @@ public class KnowledgeBaseServiceImpl implements IKnowledgeRepoManagementService
     }
 
     @Override
+    @OperationLog(
+        operationType = OperationType.UPDATE,
+        resourceType = "KnowledgeBase",
+        description = "修改知识库可见性",
+        resourceId = "knowledgeBaseId",
+        resourceName = ""
+    )
     public UpdateKnowledgeVisibilityResponse modifyKnowledgeBaseVisibility(String projectId, String knowledgeBaseId,
         String workspaceId, PermissionsRequestBody body) {
         final KnowledgeBaseEntity knowledgeBase = checkKnowledgeBaseExist(knowledgeBaseId);
@@ -931,6 +975,13 @@ public class KnowledgeBaseServiceImpl implements IKnowledgeRepoManagementService
     }
 
     @Override
+    @OperationLog(
+        operationType = OperationType.UPDATE,
+        resourceType = "KnowledgeBase",
+        description = "启用知识库",
+        resourceId = "knowledgeBaseId",
+        resourceName = ""
+    )
     public StartKnowledgeRepoResponseBody startKnowledgeRepo(String projectId, String knowledgeBaseId,
         String workspaceId) {
         log.info("operation log projectId: {}, userId:{}, startKnowledgeBase", projectId,
@@ -962,6 +1013,13 @@ public class KnowledgeBaseServiceImpl implements IKnowledgeRepoManagementService
     }
 
     @Override
+    @OperationLog(
+        operationType = OperationType.UPDATE,
+        resourceType = "KnowledgeBase",
+        description = "停用知识库",
+        resourceId = "knowledgeBaseId",
+        resourceName = ""
+    )
     public StopKnowledgeRepoResponseBody stopKnowledgeRepo(String projectId, String knowledgeBaseId,
         String workspaceId) {
         log.info("operation log projectId: {}, userId:{}, stopKnowledgeRepo", projectId,
@@ -999,6 +1057,13 @@ public class KnowledgeBaseServiceImpl implements IKnowledgeRepoManagementService
     }
 
     @Override
+    @OperationLog(
+        operationType = OperationType.UPDATE,
+        resourceType = "KnowledgeBase",
+        description = "修改知识库",
+        resourceId = "knowledgeBaseId",
+        resourceName = "body.displayName"
+    )
     public ModifyKnowledgeRepoResponseBody modifyKnowledgeRepo(String projectId, String knowledgeBaseId,
         String workspaceId, ModifyKnowledgeRepoRequestBody body) {
         final KnowledgeBaseEntity knowledgeBase = checkKnowledgeBaseExist(knowledgeBaseId);
@@ -1252,6 +1317,7 @@ public class KnowledgeBaseServiceImpl implements IKnowledgeRepoManagementService
                 .name(listKnowledgeBaseQo.getName())
                 .offset(listKnowledgeBaseQo.getOffset())
                 .limit(listKnowledgeBaseQo.getLimit())
+                .knowledgeBaseType(listKnowledgeBaseQo.getKnowledgeBaseType())
                 .build();
             return listKnowledgeBaseForCustom(paramsForCustom);
         }
@@ -1322,6 +1388,7 @@ public class KnowledgeBaseServiceImpl implements IKnowledgeRepoManagementService
                 .name(listKnowledgeBaseQo.getName())
                 .offset(listKnowledgeBaseQo.getOffset())
                 .limit(listKnowledgeBaseQo.getLimit())
+                .knowledgeBaseType(listKnowledgeBaseQo.getKnowledgeBaseType())
                 .build();
             return listKnowledgeBaseForCustom(paramsForCustom);
         }
@@ -1428,7 +1495,8 @@ public class KnowledgeBaseServiceImpl implements IKnowledgeRepoManagementService
         ListKnowledgeRepoResp knowledgeRepoResp = knowledgeRepoContext.getService(knowledgeSource)
             .listKnowledgeRepos(new ListKnowledgeRepoReq().setName(body.getName())
                 .setPageNum(body.getOffset() / body.getLimit() + 1)
-                .setPageSize(body.getLimit()));
+                .setPageSize(body.getLimit())
+                .setKnowledgeBaseType(body.getKnowledgeBaseType()));
         log.info("list knowledge for CUSTOM response is :{}", JacksonUtils.toJson(knowledgeRepoResp));
         if (Objects.isNull(knowledgeRepoResp.getDataList())) {
             return new ListKnowledgeBasesResponseBody().setTotal(0L).setItems(Collections.emptyList());
@@ -1472,7 +1540,8 @@ public class KnowledgeBaseServiceImpl implements IKnowledgeRepoManagementService
         while (true) {
             ListKnowledgeRepoResp knowledgeRepoResp = knowledgeRepoContext.getService(knowledgeSource)
                 .listKnowledgeRepos(
-                    new ListKnowledgeRepoReq().setName(body.getName()).setPageNum(pageNum).setPageSize(batchQuerySize));
+                    new ListKnowledgeRepoReq().setName(body.getName()).setPageNum(pageNum).setPageSize(batchQuerySize)
+                        .setKnowledgeBaseType(body.getKnowledgeBaseType()));
             total = knowledgeRepoResp.getTotal();
             Map<String, KnowledgeRepoInfo> knowledgeMap = ObjectUtils.firstNonNull(knowledgeRepoResp.getDataList(),
                     Collections.<KnowledgeRepoInfo>emptyList())

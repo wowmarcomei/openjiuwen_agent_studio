@@ -25,6 +25,7 @@ from openjiuwen.core.graph.pregel import TASK_STATUS_INTERRUPT
 from openjiuwen.core.graph.pregel.base import Interrupt
 from openjiuwen.core.graph.pregel.config import PregelConfig
 from openjiuwen.core.graph.pregel.constants import MAX_RECURSIVE_LIMIT
+from openjiuwen.core.common.constants.constant import INTERACTIVE_INPUT
 from openjiuwen.core.session import InteractiveInput
 from openjiuwen.core.session import (
     WORKFLOW_EXECUTE_TIMEOUT,
@@ -36,7 +37,6 @@ from openjiuwen.core.session.stream import OutputSchema, StreamEmitter
 from openjiuwen.core.workflow.components.base import ComponentAbility
 
 from jiuwen.extension.patches.aggregate_upstream_resolver import (
-    resolve_aggregate_node_ids_from_workflow,
     resolve_aggregate_upstream_node_ids_from_workflow,
 )
 
@@ -80,6 +80,13 @@ async def _patched_compiled_invoke(self, inputs, session, config=None):
             await self._checkpointer.pre_workflow_execute(session, inputs)
         if isinstance(session, SubWorkflowSession):
             _prepare_sub_workflow_aggregate_io("compiled_invoke", session, inputs)
+            # 子工作流恢复场景：确保 raw_inputs 写入 workflow_state，使 QA 能读到用户回复。
+            # 仅在 InteractiveInput 且 raw_inputs 非空时写入（补足 is_main=False 时
+            # pre_workflow_execute 不被调用的缺口）；非恢复场景的泄漏清除由 QA 节点负责。
+            if isinstance(inputs, InteractiveInput) and inputs.raw_inputs is not None:
+                session.state().update_and_commit_workflow_state(
+                    {INTERACTIVE_INPUT: inputs.raw_inputs}
+                )
         if not isinstance(inputs, InteractiveInput):
             session.state().commit_user_inputs(inputs)
         result = None
@@ -143,9 +150,6 @@ def _clear_scoped_node_io_state(
 
 
 def _cache_aggregate_ids_on_session(sub_workflow_session, workflow_self) -> None:
-    sub_workflow_session._aggregate_node_ids = resolve_aggregate_node_ids_from_workflow(
-        workflow_self
-    )
     sub_workflow_session._aggregate_upstream_node_ids = (
         resolve_aggregate_upstream_node_ids_from_workflow(workflow_self)
     )
@@ -156,8 +160,10 @@ def _prepare_sub_workflow_aggregate_io(
 ) -> None:
     """Prepare aggregate io_state before a sub-workflow graph run.
 
-    - InteractiveInput resume: clear aggregate output + upstream branches not in
-      ``executed_nodes`` (checkpoint recovery keeps the taken branch).
+    - InteractiveInput resume: clear only upstream branches not in
+      ``executed_nodes``. Aggregate outputs are preserved because pregel
+      skips nodes already in ``executed_nodes``; clearing them would leave
+      downstream references (``${aggregate.xxx}``) reading None on resume.
     - Fresh / loop re-entry (non-InteractiveInput): clear **all** aggregate upstream
       io so first-non-null does not read a prior path/round (executed_nodes may still
       list nodes from the previous inner run).
@@ -169,11 +175,9 @@ def _prepare_sub_workflow_aggregate_io(
     if not scope_id:
         return
 
-    aggregate_ids = getattr(sub_workflow_session, "_aggregate_node_ids", ()) or ()
     upstream_ids = getattr(sub_workflow_session, "_aggregate_upstream_node_ids", ()) or ()
 
     if isinstance(inputs, InteractiveInput):
-        _clear_scoped_node_io_state(sub_workflow_session, scope_id, aggregate_ids)
         executed_nodes = set(
             sub_workflow_session.state().get_workflow_state("executed_nodes") or []
         )

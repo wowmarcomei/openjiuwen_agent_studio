@@ -20,7 +20,6 @@ import static org.mockito.Mockito.when;
 
 import com.openjiuwen.studio.agent.common.utils.CryptoUtils;
 import com.openjiuwen.studio.agent.common.utils.RequestContextUtils;
-import com.openjiuwen.studio.agent.manager.config.IRAdapterConfig;
 import com.openjiuwen.studio.agent.manager.constant.Constants;
 import com.openjiuwen.studio.agent.manager.dto.AgentInfo;
 import com.openjiuwen.studio.agent.manager.dto.KnowledgeRepoReference;
@@ -133,7 +132,6 @@ class IrAdapterServiceTest extends BaseTest {
         ReflectionTestUtils.setField(irAdapterService, "encryptionAdapter", encryptionAdapter);
 
         ReflectionTestUtils.setField(irAdapterService, "agentIrVersion", "1.0.0");
-        ReflectionTestUtils.setField(irAdapterService, "agentRuntimeEndpoint", "http://test-endpoint");
         ReflectionTestUtils.setField(irAdapterService, "opProjectId", "test-op-project");
 
         // 设置默认的Mock行为
@@ -582,8 +580,7 @@ class IrAdapterServiceTest extends BaseTest {
 
         Map<String, String> reflection = new HashMap<>();
         workflowVO.getNodes().forEach(m -> reflection.put(m.getId(), m.getType()));
-        IRAdapterConfig irAdapterConfig = mock(IRAdapterConfig.class);
-        IRAdapter irAdapter = new IRAdapter(irAdapterConfig);
+        IRAdapter irAdapter = new IRAdapter();
         List<Map<String, Object>> connections =
                 irAdapter.adaptConnections(workflowVO.getEdges(), reflection, null);
         assertFalse(connections.isEmpty());

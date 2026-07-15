@@ -640,31 +640,6 @@ CREATE TABLE IF NOT EXISTS t_complex_intent_branch (
     KEY idx_t_complex_intent_branch_intent (intent_id)
     ) COMMENT='复杂意图分支表';
 
-CREATE TABLE IF NOT EXISTS t_agent_datasource (
-    id                VARCHAR(64)     NOT NULL COMMENT '数据源资源id、主键',
-    project_id        VARCHAR(64)      NOT NULL COMMENT 'project ID',
-    domain_id         VARCHAR(64)     NOT NULL DEFAULT '0' COMMENT '租户 ID',
-    name              VARCHAR(64)     NOT NULL COMMENT '数据源名称',
-    type              VARCHAR(16)     NOT NULL COMMENT '数据源类型',
-    desc              VARCHAR(2048)   NULL COMMENT '数据源描述信息',
-    internet_access   VARCHAR(16)     NOT NULL COMMENT '接入网络类型',
-    instance_id       VARCHAR(64)     NULL COMMENT '实例id（rds模式有效）',
-    instance_name     VARCHAR(256)    NULL COMMENT '实例名称（rds模式有效）',
-    connection_info   TEXT            NULL COMMENT '数据库连接信息（加密存储密码）',
-    status            VARCHAR(32)     NULL COMMENT '连通性检测状态',
-    last_error_message VARCHAR(2048)  NULL COMMENT '最后一次错误信息',
-    created_by        VARCHAR(64)     NULL COMMENT '创建人',
-    creator_id        VARCHAR(64)      NULL COMMENT '创建人ID',
-    created_on        TIMESTAMP       NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    updated_by        VARCHAR(64)     NULL COMMENT '修改人',
-    updater_id        VARCHAR(64)     NULL COMMENT '修改人ID',
-    updated_on        TIMESTAMP       NULL DEFAULT CURRENT_TIMESTAMP  COMMENT '更新时间',
-    workspace_id      VARCHAR(64)     NULL COMMENT '工作空间ID',
-    trace_id          VARCHAR(64)     NULL COMMENT '溯源ID',
-    PRIMARY KEY (id),
-    KEY idx_t_agent_datasource_domain (domain_id)
-    ) COMMENT='数据源配置表';
-
 CREATE TABLE IF NOT EXISTS t_credential(
     id            VARCHAR(64)     NOT NULL        COMMENT 'Credential唯一标识ID，主键',
     resource_id   VARCHAR(64)     NOT NULL        COMMENT '资源id',
@@ -1112,8 +1087,8 @@ CREATE TABLE t_history_agent
     published_on                timestamp NULL DEFAULT NULL COMMENT 'agent发布时间',
     model_type                  varchar(64)          DEFAULT NULL COMMENT '模型类型',
     knowledge_retrieve_policy   mediumtext COMMENT '知识检索策略（json）',
-    workflow_switch_enabled     tinyint(1) NOT NULL DEFAULT '0' COMMENT '工作流跳转',
-    scheduling_mode             varchar(32) NOT NULL DEFAULT 'ReAct' COMMENT 'agent调度模式，ReAct、RAG',
+    workflow_switch_enabled     tinyint(1) DEFAULT '0' COMMENT '工作流跳转',
+    scheduling_mode             varchar(32) DEFAULT 'ReAct' COMMENT 'agent调度模式，ReAct、RAG',
     model                       varchar(64)          DEFAULT NULL COMMENT '模型资产名称',
     content_review              mediumtext COMMENT 'Agent 内容审核',
     workspace_id                varchar(64)          DEFAULT NULL COMMENT '工作空间ID',
@@ -1129,8 +1104,8 @@ CREATE TABLE t_history_agent
     plan_model_config           varchar(256)         DEFAULT NULL COMMENT '规划模型参数配置',
     plan_model_type             varchar(64)          DEFAULT NULL COMMENT '规划模型类型',
     deleted                     tinyint(1) NOT NULL DEFAULT '0' COMMENT '逻辑删除标记：0-未删除，1-已删除',
-    is_shared                   tinyint(1) NOT NULL DEFAULT '0' COMMENT '是否已共享（0=否，1=是）',
-    is_share                    tinyint(1) NOT NULL DEFAULT '0' COMMENT '是否已共享（0=否，1=是）',
+    is_shared                   tinyint(1) DEFAULT '0' COMMENT '是否已共享（0=否，1=是）',
+    is_share                    tinyint(1) DEFAULT '0' COMMENT '是否已共享（0=否，1=是）',
     PRIMARY KEY (history_id) ,
     KEY                           index_t_agent_history_agent_id (agent_id) ,
     KEY                           IDX_T_AGENT_HISTORY_PROJECT_AGENT (project_id,agent_id,workspace_id)

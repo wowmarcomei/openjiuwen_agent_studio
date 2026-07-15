@@ -59,6 +59,16 @@ _DEBUG_EVENT_RETURN_TO_SERVICE: dict[str, str] = {
     "FlowMcp": "jiuwen.mcp",
 }
 
+# 控制流节点componentId关键字，命中则跳过调试事件
+_SKIP_COMPONENT_KEY: list[str] = [
+    "_break_branch_",
+    "_break_",
+    "_loop_end_",
+    "_input",
+    "_output",
+    "_parallel_done",
+]
+
 
 class WorkflowWrapper:
     """适配旧 WorkflowHandler 调用模式到新 openJiuwen Workflow。
@@ -179,7 +189,7 @@ class WorkflowWrapper:
             # 首次执行：将 params 合入 inputs，commit_user_inputs() 会将其写入 global_state
             # 中断恢复：inputs 为 InteractiveInput，commit_user_inputs() 被跳过，
             #          checkpoint 恢复的 global_state 保留中断前的最新值
-            inputs = {"query": query, **self._build_global_state_params(params, workflow_id)}
+            inputs = {"query": query, **WorkflowWrapper._build_global_state_params(params, workflow_id)}
 
         workflow_started = False
         # 跟踪最后执行的节点信息，用于生成工作流级 FINISH StreamData
@@ -206,6 +216,8 @@ class WorkflowWrapper:
                         execution_id=session_id or "",
                     )
                     workflow_started = True
+                if self._is_skip_component(chunk):
+                    continue
                 if isinstance(chunk, OutputSchema) and chunk.type == INTERACTION:
                     # Questioner 中断：不 yield Message，Handler 从 StreamData 的 should_interrupt 检测并自行生成中断消息
                     # 用 continue 而非 return，确保 async generator 自然完成，session checkpoint 正常保存
@@ -452,7 +464,8 @@ class WorkflowWrapper:
 
     # ==================== 私有方法 ====================
 
-    def _build_global_state_params(self, params: dict, workflow_id: str = "") -> dict:
+    @staticmethod
+    def _build_global_state_params(params: dict, workflow_id: str = "") -> dict:
         """构建需要通过 inputs → commit_user_inputs() 写入 global_state 的参数。
 
         这些参数同时存在于 envs（由 _build_envs 生成），但 envs 不被 checkpoint 保存。
@@ -489,22 +502,6 @@ class WorkflowWrapper:
                     result["_env"] = params[key]
                 result[key] = params[key]
 
-        # 注入 __node_defs__ 供 callback 读取节点类型、名称和 configs
-        # 优先使用 params 中的完整定义（含 configs，由 workflow_handler 从 IR 提取）
-        # fallback 到 _node_name_type_map（仅含 node_type/node_name，旧框架路径）
-        if "__node_defs__" in params and params["__node_defs__"]:
-            result["__node_defs__"] = params["__node_defs__"]
-        elif self._node_name_type_map:
-            wf_node_defs = {}
-            for comp_id, meta in self._node_name_type_map.items():
-                if isinstance(meta, dict):
-                    wf_node_defs[comp_id] = {
-                        "node_type": meta.get("type", ""),
-                        "node_name": meta.get("name", ""),
-                    }
-            if wf_node_defs:
-                result["__node_defs__"] = {workflow_id: wf_node_defs}
-
         return result
 
     # ---------- TraceSchema 转换（调试信息） ----------
@@ -523,6 +520,24 @@ class WorkflowWrapper:
         if WorkflowWrapper._is_debug_mode(params):
             modes.append(BaseStreamMode.TRACE)
         return modes
+
+    @staticmethod
+    def _is_skip_component(chunk: Any) -> bool:
+        """检查 chunk 是否来自内部控制流节点（_parallel_done 等），命中则跳过。"""
+        comp_id = ""
+        if isinstance(chunk, TraceSchema):
+            payload = chunk.payload if isinstance(chunk.payload, dict) else {}
+            comp_id = payload.get("componentId", "")
+        elif isinstance(chunk, CustomSchema):
+            comp_id = getattr(chunk, "componentId", "") or ""
+            if not comp_id and isinstance(getattr(chunk, "data", None), dict):
+                comp_id = chunk.data.get("componentId", "")
+        elif isinstance(chunk, OutputSchema):
+            payload = chunk.payload if isinstance(chunk.payload, dict) else {}
+            comp_id = payload.get("componentId", "")
+        if not comp_id:
+            return False
+        return any(key in comp_id for key in _SKIP_COMPONENT_KEY)
 
     # ---------- start trace 缓冲逻辑 ----------
 

@@ -2,15 +2,19 @@
 
 package com.openjiuwen.studio.agent.common.redis.config;
 
+import com.openjiuwen.studio.agent.common.crypt.Ciphers;
+
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class RedisClientConfigTest {
 
+    private final Ciphers ciphers = new Ciphers(null, null);
+
     @Test
     void testGettersAndSetters() {
-        RedisClientConfig config = new RedisClientConfig();
+        RedisClientConfig config = newConfig();
         config.setRedisHost("localhost");
         config.setRedisPort(6379);
         config.setRedisPassword("password");
@@ -36,7 +40,7 @@ class RedisClientConfigTest {
 
     @Test
     void testDefaultValues() {
-        RedisClientConfig config = new RedisClientConfig();
+        RedisClientConfig config = newConfig();
         assertEquals(0, config.getRedisPort());
         assertEquals(0, config.getConnectionMinimumIdleSize());
         assertEquals(0, config.getConnectionPoolSize());
@@ -44,11 +48,11 @@ class RedisClientConfigTest {
 
     @Test
     void testEqualsAndHashCode() {
-        RedisClientConfig config1 = new RedisClientConfig();
+        RedisClientConfig config1 = newConfig();
         config1.setRedisHost("localhost");
         config1.setRedisPort(6379);
 
-        RedisClientConfig config2 = new RedisClientConfig();
+        RedisClientConfig config2 = newConfig();
         config2.setRedisHost("localhost");
         config2.setRedisPort(6379);
 
@@ -58,9 +62,13 @@ class RedisClientConfigTest {
 
     @Test
     void testToString() {
-        RedisClientConfig config = new RedisClientConfig();
+        RedisClientConfig config = newConfig();
         config.setRedisHost("localhost");
         String str = config.toString();
         assertEquals(true, str.contains("localhost"));
+    }
+
+    private RedisClientConfig newConfig() {
+        return new RedisClientConfig(ciphers);
     }
 }

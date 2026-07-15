@@ -18,14 +18,12 @@ import com.openjiuwen.studio.agent.manager.dto.ListKnowledgeBasesQo;
 import com.openjiuwen.studio.agent.manager.dto.ListKnowledgeBasesResponseBody;
 import com.openjiuwen.studio.agent.manager.entity.Agent;
 import com.openjiuwen.studio.agent.manager.entity.CommonMeta;
-import com.openjiuwen.studio.agent.manager.entity.DatasourceEntity;
 import com.openjiuwen.studio.agent.manager.entity.McpServiceEntity;
 import com.openjiuwen.studio.agent.manager.entity.MemoryRepoEntity;
 import com.openjiuwen.studio.agent.manager.entity.ToolEntity;
 import com.openjiuwen.studio.agent.manager.entity.WorkflowEntity;
 import com.openjiuwen.studio.agent.manager.entity.md.ModelServiceData;
 import com.openjiuwen.studio.agent.manager.mapper.AgentMapper;
-import com.openjiuwen.studio.agent.manager.mapper.DatasourceMapper;
 import com.openjiuwen.studio.agent.manager.mapper.McpServiceMapper;
 import com.openjiuwen.studio.agent.manager.mapper.MemoryRepoMapper;
 import com.openjiuwen.studio.agent.manager.mapper.SkillMapper;
@@ -45,9 +43,6 @@ class ResourceServiceNewTest {
 
     @Mock
     private ModelServiceMapper modelServiceMapper;
-
-    @Mock
-    private DatasourceMapper datasourceMapper;
 
     @Mock
     private McpServiceMapper mcpServiceMapper;
@@ -193,25 +188,6 @@ class ResourceServiceNewTest {
     }
 
     @Test
-    void testGetResourceMeta_SqlType() {
-        DatasourceEntity ds = new DatasourceEntity();
-        ds.setId("ds-1");
-        ds.setName("Test Datasource");
-        ds.setDomainId("d1");
-        ds.setProjectId("p1");
-        ds.setWorkspaceId("w1");
-        when(datasourceMapper.getByIdsAndWorkspace(List.of("ds-1"), "p1", "w1"))
-            .thenReturn(List.of(ds));
-
-        Map<String, CommonMeta> result = resourceService.getResourceMeta(List.of("ds-1"), "sql", "p1", "w1");
-
-        assertNotNull(result);
-        assertTrue(result.containsKey("ds-1"));
-        assertEquals("Test Datasource", result.get("ds-1").getName());
-        verify(datasourceMapper).getByIdsAndWorkspace(List.of("ds-1"), "p1", "w1");
-    }
-
-    @Test
     void testGetResourceMeta_McpType() {
         McpServiceEntity mcp = new McpServiceEntity();
         mcp.setId("mcp-1");
@@ -310,7 +286,6 @@ class ResourceServiceNewTest {
 
     @Test
     void testGetResourceMeta_InvalidType() {
-        assertThrows(IllegalArgumentException.class,
-            () -> resourceService.getResourceMeta(List.of("id-1"), "invalid_type", "p1", "w1"));
+        assertNull(resourceService.getResourceMeta(List.of("id-1"), "invalid_type", "p1", "w1"));
     }
 }
