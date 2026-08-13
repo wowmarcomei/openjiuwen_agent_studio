@@ -84,6 +84,7 @@ export class AppComponent implements OnInit, OnDestroy {
   private readonly localAuthRequiredHandler = (): void => {
     if (this.localUser) {
       this.localUser = undefined;
+      this.localAuthService.clearCurrentUser();
       this.pageInited = false;
       this.authRequired = true;
     }
@@ -215,15 +216,9 @@ export class AppComponent implements OnInit, OnDestroy {
     this.startLocalUserSession(user);
   }
 
-  public logoutLocalUser(): void {
-    this.localAuthService.logout().subscribe({
-      next: () => window.location.reload(),
-      error: () => window.location.reload(),
-    });
-  }
-
   private startLocalUserSession(user: LocalUser): void {
     this.localUser = user;
+    this.localAuthService.setCurrentUser(user);
     StorageService.setSessionStorage('CUR_SPACE_OPTIONS', '{}');
     StorageService.setSessionStorage('SPACE_OPTIONS', '[]');
     StorageService.setLocalStorage(

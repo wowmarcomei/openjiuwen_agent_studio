@@ -1,11 +1,6 @@
 <div class="auth-loading" *ngIf="authChecking"><span></span><p>正在加载 Console…</p></div>
 <app-local-auth *ngIf="!authChecking && authRequired" (authenticated)="onLocalAuthenticated($event)"></app-local-auth>
 <router-outlet *ngIf="!authRequired && pageInited && canUse && permissionUse"></router-outlet>
-<div class="local-user-badge" *ngIf="localUser && !authRequired && pageInited">
-  <span class="user-avatar">{{ (localUser.realName || localUser.username).slice(0, 1) }}</span>
-  <span class="user-name">{{ localUser.realName || localUser.username }}</span>
-  <button type="button" (click)="logoutLocalUser()">退出</button>
-</div>
 <div style="
   width: 500px;
   height: 200px;

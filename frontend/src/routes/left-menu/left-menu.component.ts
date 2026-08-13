@@ -6,6 +6,7 @@ import {
   HostListener,
   Input,
   OnChanges,
+  OnDestroy,
   OnInit,
   SimpleChanges,
   ViewChild,
@@ -40,7 +41,10 @@ import { AppExceedModalComponent } from '@routes/knowledge-center/components/app
 
 import { CommonUtils } from '../../utils/common.util';
 import { NzModalService } from "ng-zorro-antd/modal";
+import { NzMessageService } from 'ng-zorro-antd/message';
 import { StorageService } from '@shared/services/cfdata.service';
+import { LocalAuthService, LocalUser } from '@services/local-auth.service';
+import { PE_SESSION_KEY, POC_JS_SESSION_KEY } from '@constants/exp-tmpl-config.const';
 
 @Component({
   selector: 'left-menu',
@@ -70,7 +74,7 @@ import { StorageService } from '@shared/services/cfdata.service';
     },
   ],
 })
-export class LeftMenuComponent implements OnInit, OnChanges {
+export class LeftMenuComponent implements OnInit, OnChanges, OnDestroy {
   private destroy$ = new Subject<void>();
 
   @Input() items: IMenuItem[];
@@ -85,6 +89,7 @@ export class LeftMenuComponent implements OnInit, OnChanges {
   private routerSub: Subscription;
   private permissionSubscription: Subscription;
   private subscribeBtnStatusSubscription: Subscription;
+  private localUserSubscription: Subscription;
   public is_need_menu = true;
   public routeUrl = '';
   public routeParams = {}; // url上面的参数
@@ -130,6 +135,8 @@ export class LeftMenuComponent implements OnInit, OnChanges {
   public changeUrl = cdnAssetUrl;
   public isSelectedResourceManage: boolean = false;
   public isSelectedAuthorizationManage: boolean = false;
+  public localUser: LocalUser | null = null;
+  public logoutLoading = false;
   public expandMenuData: any[] = []; // 收起左侧侧边栏的时候，展示的数据
   public handleClickOutMenu: any;
 
@@ -145,6 +152,7 @@ export class LeftMenuComponent implements OnInit, OnChanges {
     private route: ActivatedRoute,
     private spaceTeamManagementService: SpaceTeamManagementService,
     private nzModalService: NzModalService,
+    private nzMessageService: NzMessageService,
     private cdr: ChangeDetectorRef,
     private permissionService: PermissionService,
     public commonService: CommonService,
@@ -154,6 +162,7 @@ export class LeftMenuComponent implements OnInit, OnChanges {
     private readonly i18NextEagerPipe: angularI18next.I18NextEagerPipe,
     private masOperatorService: MasOperatorService,
     private appAgentRepoServ: AppAgentRepoService,
+    private localAuthService: LocalAuthService,
   ) {
     // 箭头函数，保存this的指向
     this.handleClickOutMenu = (event) => {
@@ -423,8 +432,20 @@ export class LeftMenuComponent implements OnInit, OnChanges {
     return this.userInfo?.userRoles?.includes('te_admin') ?? false;
   }
 
+  get localUserDisplayName(): string {
+    return this.localUser?.realName?.trim() || this.localUser?.username || '';
+  }
+
+  get localUserInitial(): string {
+    return this.localUserDisplayName.slice(0, 1).toUpperCase();
+  }
+
   async ngOnInit(): Promise<void> {
     this.userInfo = StorageService.getLocalStorage('PROMPT_ENGINEERING_ME');
+    this.localUserSubscription = this.localAuthService.currentUser$.subscribe((user) => {
+      this.localUser = user;
+      this.cdr.markForCheck();
+    });
     const language =
       this.consoleFrameworkService?.dataService?.getLocale() as string;
     if (language === 'zh-cn') {
@@ -836,12 +857,48 @@ export class LeftMenuComponent implements OnInit, OnChanges {
 
   ngOnDestroy(): void {
     window.removeEventListener('click', this.handleClickOutMenu);
+    if (this.routerSub) {
+      this.routerSub.unsubscribe();
+    }
     if (this.permissionSubscription) {
       this.permissionSubscription.unsubscribe();
     }
     if (this.subscribeBtnStatusSubscription) {
       this.subscribeBtnStatusSubscription.unsubscribe();
     }
+    if (this.localUserSubscription) {
+      this.localUserSubscription.unsubscribe();
+    }
+  }
+
+  logoutLocalUser(event?: Event): void {
+    event?.stopPropagation();
+    if (this.logoutLoading) {
+      return;
+    }
+
+    this.logoutLoading = true;
+    this.localAuthService.logout().subscribe({
+      next: () => {
+        this.clearLocalUserCache();
+        window.location.reload();
+      },
+      error: () => {
+        this.logoutLoading = false;
+        this.nzMessageService.error('退出失败，请稍后重试');
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  private clearLocalUserCache(): void {
+    this.localAuthService.clearCurrentUser();
+    this.permissionService.clearPermissions();
+    StorageService.delLocalStorage(PE_SESSION_KEY);
+    StorageService.delSessionStorage(PE_SESSION_KEY);
+    StorageService.delLocalStorage(POC_JS_SESSION_KEY);
+    StorageService.delSessionStorage('CUR_SPACE_OPTIONS');
+    StorageService.delSessionStorage('SPACE_OPTIONS');
   }
 
   changeLanguage(lang: string) {

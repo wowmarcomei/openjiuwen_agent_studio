@@ -2882,6 +2882,8 @@
   "auth_config": "鉴权配置",
   "parse_tool_args_err": "参数解析失败：输入数据格式不符合要求，请检查参数格式后重试",
   "click_to_collapse_menu": "点击收起",
+  "local_user_menu": "用户菜单",
+  "local_logout": "退出登录",
   "add_all": "添加全部",
   "remove_all": "移除全部",
   "select_tool": "选择工具",

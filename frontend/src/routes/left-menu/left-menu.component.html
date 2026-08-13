@@ -189,11 +189,20 @@
       </div>
 
       <div class="license-set-body" style="display: block;">
-        <div class="flex mb-[15px]" *ngIf=" !isMarket">
-          <a nz-tooltip [nzTooltipTitle]="tipContent" nzTooltipPlacement="topLeft">
-            {{ selectLanguage.label }}
-          </a>
-        </div>
+        <button
+          type="button"
+          class="local-user-entry"
+          *ngIf="localUser && !isMarket"
+          nz-dropdown
+          [nzDropdownMenu]="localUserMenu"
+          nzTrigger="click"
+          nzPlacement="topLeft"
+          [attr.aria-label]="'local_user_menu' | i18nextEager"
+        >
+          <span class="local-user-avatar">{{ localUserInitial }}</span>
+          <span class="local-user-name" [title]="localUserDisplayName">{{ localUserDisplayName }}</span>
+          <nz-icon nzType="ellipsis" nzTheme="outline" class="local-user-more"/>
+        </button>
         <p class="left-menu-title-line"></p>
         <div class="left-menu-resource-manage flex"
              *ngIf="isAdmin && !isMarket"
@@ -297,11 +306,21 @@
       </div>
 
       <div class="license-set-body w-8" style="display: block;">
-        <div *ngIf=" !isMarket" class="flex mb-[15px]">
-          <a nz-tooltip [nzTooltipTitle]="tipContent" nzTooltipPlacement="topLeft">
-            {{ selectLanguage.label }}
-          </a>
-        </div>
+        <button
+          type="button"
+          class="local-user-entry-collapsed"
+          *ngIf="localUser && !isMarket"
+          nz-dropdown
+          [nzDropdownMenu]="localUserMenu"
+          nzTrigger="click"
+          nzPlacement="topLeft"
+          nz-tooltip
+          [nzTooltipTitle]="localUserDisplayName"
+          nzTooltipPlacement="right"
+          [attr.aria-label]="'local_user_menu' | i18nextEager"
+        >
+          {{ localUserInitial }}
+        </button>
         <p class="left-menu-title-line" style="margin-left: 8px;width: 16px"></p>
         <div (click)="routeToAuthorizationManage()" *ngIf="isAdmin && !isMarket"
              [style]="{
@@ -333,28 +352,28 @@
 
   </div>
 </div>
-<ng-template #tipContent let-context="context">
-  <div
-    [class]="
-      selectLanguage.id === 'zh-cn'
-        ? 'language-body-text-active'
-        : 'language-body-text'
-    "
-    (click)="changeLanguage('zh-cn')"
-  >
-    简体中文
-  </div>
-  <div
-    [class]="
-      selectLanguage.id === 'en-us'
-        ? 'language-body-text-active'
-        : 'language-body-text'
-    "
-    (click)="changeLanguage('en-us')"
-  >
-    English
-  </div>
-</ng-template>
+<nz-dropdown-menu #localUserMenu="nzDropdownMenu">
+  <ul nz-menu class="local-user-dropdown">
+    <li nz-menu-item nzDisabled class="local-user-dropdown-header">
+      <span class="local-user-dropdown-avatar">{{ localUserInitial }}</span>
+      <span class="local-user-dropdown-copy">
+        <strong>{{ localUserDisplayName }}</strong>
+        <small>@{{ localUser?.username }}</small>
+      </span>
+    </li>
+    <li nz-menu-divider></li>
+    <li nz-submenu [nzTitle]="'language' | i18nextEager" nzIcon="global">
+      <ul>
+        <li nz-menu-item [nzSelected]="selectLanguage.id === 'zh-cn'" (click)="changeLanguage('zh-cn')">简体中文</li>
+        <li nz-menu-item [nzSelected]="selectLanguage.id === 'en-us'" (click)="changeLanguage('en-us')">English</li>
+      </ul>
+    </li>
+    <li nz-menu-item [nzDisabled]="logoutLoading" (click)="logoutLocalUser($event)">
+      <nz-icon [nzType]="logoutLoading ? 'loading' : 'logout'" nzTheme="outline"/>
+      <span class="local-user-dropdown-logout">{{ 'local_logout' | i18nextEager }}</span>
+    </li>
+  </ul>
+</nz-dropdown-menu>
 <ng-template #authorizationManageTip let-context="context">
   <div class="authorization-manage-tip w-[280px]">
     <div class="flex items-center justify-between">

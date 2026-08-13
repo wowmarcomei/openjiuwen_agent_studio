@@ -38,25 +38,4 @@
 
 .auth-loading p { margin: 0; font-size: 14px; }
 
-.local-user-badge {
-  position: fixed;
-  right: 18px;
-  bottom: 18px;
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 7px 9px;
-  border: 1px solid #e1e6ef;
-  border-radius: 22px;
-  background: rgba(255, 255, 255, .94);
-  box-shadow: 0 8px 26px rgba(30, 49, 83, .13);
-  backdrop-filter: blur(10px);
-}
-
-.user-avatar { display: grid; place-items: center; width: 27px; height: 27px; border-radius: 50%; background: #e9f0ff; color: #295fcf; font-size: 12px; font-weight: 600; }
-.user-name { max-width: 120px; overflow: hidden; color: #344158; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
-.local-user-badge button { border: 0; padding: 4px 7px; background: transparent; color: #7c8798; font-size: 12px; cursor: pointer; }
-.local-user-badge button:hover { color: #d34b54; }
-
 @keyframes auth-spin { to { transform: rotate(360deg); } }

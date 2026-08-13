@@ -2866,6 +2866,8 @@
   "auth_config": "Auth Config",
   "parse_tool_args_err": "Parameter parsing failed: the input data format does not match the requirement. Please check the parameter format and try again.",
   "click_to_collapse_menu": "Click to collapse",
+  "local_user_menu": "User menu",
+  "local_logout": "Log out",
   "add_all": "Select All",
   "remove_all": "Deselect All",
   "select_tool": "Select Tool",
