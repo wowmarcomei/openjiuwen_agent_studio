@@ -201,6 +201,15 @@ class SessionServiceTest {
     }
 
     @Test
+    void logoutSession_ShouldInvalidateDatabaseAndRedis() {
+        sessionService.logoutSession("activeSession");
+
+        verify(sessionRepository).logoutSession(eq("activeSession"), eq(Session.SessionStatus.LOGGED_OUT),
+            any(LocalDateTime.class));
+        verify(redisTemplate).delete("session:activeSession");
+    }
+
+    @Test
     void cleanupExpiredSessions_ShouldCallBothOperations() {
         // 准备测试数据
         LocalDateTime testCurrentTime = LocalDateTime.now();

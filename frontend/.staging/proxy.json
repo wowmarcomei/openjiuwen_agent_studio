@@ -1,4 +1,9 @@
 {
+  "/auth/local": {
+    "target": "http://127.0.0.1:31111",
+    "changeOrigin": true,
+    "secure": false
+  },
   "/v1/0/agent-manager": {
     "target": "http://127.0.0.1:31111",
     "changeOrigin": true,

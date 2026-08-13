@@ -108,6 +108,10 @@ export class HttpService {
       window.location.href = error.error.redirectUrl;
       return throwError(() => error);
     }
+    if (error.status === 401 && error.error?.code === 'AUTH_REQUIRED') {
+      window.dispatchEvent(new Event('local-auth-required'));
+      return throwError(() => error);
+    }
 
     const defaultMsg = this.i18n.transform('MAStudio.00410400', {
       ns: I18nNamespace.ERROR,

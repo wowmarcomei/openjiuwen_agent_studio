@@ -433,6 +433,16 @@ env:
   sandbox:
     enable: ${env_sandbox_enable:false}
 
+# 本地多用户认证。SSO/SAML 部署应关闭该开关，继续使用对应的企业认证方式。
+local:
+  auth:
+    enabled: ${local_auth_enabled:true}
+    registration-enabled: ${local_auth_registration_enabled:true}
+    default-domain-id: ${local_auth_default_domain_id:0}
+    default-project-id: ${local_auth_default_project_id:0}
+    cookie-secure: ${local_auth_cookie_secure:${server.ssl.enabled:false}}
+    cookie-same-site: ${local_auth_cookie_same_site:Lax}
+
 env-management:
   limit-quota: ${env_mgmt_limit_quota:5}
   ops-call: ${env_mgmt_ops_call:false}

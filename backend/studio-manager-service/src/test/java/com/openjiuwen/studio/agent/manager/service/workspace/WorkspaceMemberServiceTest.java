@@ -22,9 +22,12 @@ import com.openjiuwen.studio.agent.manager.dto.iam.GetIamUserResponse;
 import com.openjiuwen.studio.agent.manager.dto.iam.IamUserInfo;
 import com.openjiuwen.studio.agent.manager.entity.WorkSpaceMemberEntity;
 import com.openjiuwen.studio.agent.manager.entity.WorkspaceEntity;
+import com.openjiuwen.studio.agent.manager.entity.User;
 import com.openjiuwen.studio.agent.manager.mapper.workspace.WorkspaceMapper;
 import com.openjiuwen.studio.agent.manager.mapper.workspace.WorkspaceMemberMapper;
+import com.openjiuwen.studio.agent.manager.repository.UserRepository;
 import com.openjiuwen.studio.agent.manager.service.SkuManageService;
+import com.openjiuwen.studio.agent.manager.service.local.LocalAccountService;
 import com.openjiuwen.studio.agent.manager.utils.IamServiceUtils;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -35,6 +38,7 @@ import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.beans.factory.ObjectProvider;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -62,6 +66,15 @@ class WorkspaceMemberServiceTest {
 
     @Mock
     private I18nUtil i18nUtil;
+
+    @Mock
+    private UserRepository userRepository;
+
+    @Mock
+    private ObjectProvider<LocalAccountService> localAccountServiceProvider;
+
+    @Mock
+    private LocalAccountService localAccountService;
 
     @InjectMocks
     private WorkspaceMemberService workspaceMemberService;
@@ -150,6 +163,25 @@ class WorkspaceMemberServiceTest {
             assertNotNull(result);
             assertEquals(1, result.getCount());
         }
+    }
+
+    @Test
+    void testQueryIamUserList_LocalAuthUsesRegisteredUsers() {
+        when(localAccountServiceProvider.getIfAvailable()).thenReturn(localAccountService);
+        User user = User.builder()
+            .username("alice")
+            .realName("Alice")
+            .source(User.UserSource.INTERNAL)
+            .isActive(true)
+            .build();
+        when(userRepository.findActiveUsers(any())).thenReturn(List.of(user));
+
+        GetWorkspaceMemberListRsp result = workspaceMemberService.queryIamUserList("proj1");
+
+        assertEquals(1, result.getCount());
+        assertEquals("alice", result.getWorkspaceList().get(0).getMemberId());
+        assertEquals("Alice", result.getWorkspaceList().get(0).getMemberName());
+        verifyNoInteractions(iamServiceUtils);
     }
 
     @Test

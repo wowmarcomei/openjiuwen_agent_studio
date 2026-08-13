@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -35,6 +36,8 @@ import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.io.PrintWriter;
+
 @ExtendWith(MockitoExtension.class)
 public class SimpleUserContextFilterTest {
 
@@ -46,6 +49,9 @@ public class SimpleUserContextFilterTest {
 
     @Mock
     private FilterChain filterChain;
+
+    @Mock
+    private PrintWriter responseWriter;
 
     @Mock
     private OkHttpClientUtils okHttpClientUtils;
@@ -62,12 +68,13 @@ public class SimpleUserContextFilterTest {
     private SimpleUserContextFilter filter;
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         filter = new SimpleUserContextFilter();
         springBeanUtilsMock = mockStatic(SpringBeanUtils.class);
         servletUtilsMock = mockStatic(ServletUtils.class);
         springBeanUtilsMock.when(() -> SpringBeanUtils.getProperty(eq(SimpleConstants.SERVLET_CONTEXT_PATH), anyString()))
             .thenReturn("");
+        lenient().when(response.getWriter()).thenReturn(responseWriter);
     }
 
     @AfterEach
@@ -124,9 +131,10 @@ public class SimpleUserContextFilterTest {
     }
 
     @Test
-    void testDoFilter_V3Path_WithSid_SuccessfulResponse() throws Exception {
+    void testDoFilter_V3Path_WithHeaderToken_SuccessfulResponse() throws Exception {
         when(request.getRequestURI()).thenReturn("/v3/some-api");
-        servletUtilsMock.when(() -> ServletUtils.getAgentSid(request)).thenReturn("test-sid");
+        servletUtilsMock.when(() -> ServletUtils.getAgentSid(request)).thenReturn(null);
+        when(request.getHeader(SimpleConstants.X_AUTH_TOKEN)).thenReturn("test-sid");
 
         springBeanUtilsMock.when(() -> SpringBeanUtils.getBean(OkHttpClientUtils.class)).thenReturn(okHttpClientUtils);
         when(okHttpClientUtils.getHttpClient()).thenReturn(httpClient);
@@ -176,7 +184,8 @@ public class SimpleUserContextFilterTest {
         filter.doFilter(request, response, filterChain);
 
         verify(request, never()).setAttribute(eq("CURRENT_USER"), any());
-        verify(filterChain, times(1)).doFilter(request, response);
+        verify(filterChain, never()).doFilter(request, response);
+        verify(response).setStatus(HttpServletResponse.SC_UNAUTHORIZED);
     }
 
     @Test
@@ -195,7 +204,8 @@ public class SimpleUserContextFilterTest {
         filter.doFilter(request, response, filterChain);
 
         verify(request, never()).setAttribute(eq("CURRENT_USER"), any());
-        verify(filterChain, times(1)).doFilter(request, response);
+        verify(filterChain, never()).doFilter(request, response);
+        verify(response).setStatus(HttpServletResponse.SC_UNAUTHORIZED);
     }
 
     @Test
@@ -244,7 +254,8 @@ public class SimpleUserContextFilterTest {
         filter.doFilter(request, response, filterChain);
 
         verify(request, never()).setAttribute(eq("CURRENT_USER"), any());
-        verify(filterChain, times(1)).doFilter(request, response);
+        verify(filterChain, never()).doFilter(request, response);
+        verify(response).setStatus(HttpServletResponse.SC_UNAUTHORIZED);
     }
 
     @Test

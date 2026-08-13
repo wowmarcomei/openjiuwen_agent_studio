@@ -18,7 +18,8 @@ import org.springframework.security.web.SecurityFilterChain;
  *
  */
 @Configuration
-@ConditionalOnExpression("'simple'.equals('${env.type:}') && ''.equals('${auth.sso.validate-url:}')")
+@ConditionalOnExpression("'simple'.equals('${env.type:}') && ''.equals('${auth.sso.validate-url:}')"
+    + " && 'false'.equalsIgnoreCase('${local.auth.enabled:true}')")
 public class FilterConfig {
     @Bean
     public FilterRegistrationBean<SimpleAuthFilter> simpleAuthFilter() {

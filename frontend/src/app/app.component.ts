@@ -1,10 +1,10 @@
 import { registerLocaleData } from '@angular/common';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import zh from '@angular/common/locales/zh';
 import {
   ChangeDetectorRef,
   Component,
-  Inject,
+  Inject, OnDestroy,
   OnInit, TemplateRef, ViewChild
 } from '@angular/core';
 import { Title } from '@angular/platform-browser';
@@ -20,7 +20,7 @@ import { ContextService } from '@services/context.service';
 import { HttpService } from '@services/http.service';
 import { COMMON_MODULES, MODULES } from '@shared/modules';
 import * as angularI18next from 'angular-i18next';
-import { Subscription } from 'rxjs';
+import { firstValueFrom, Subscription } from 'rxjs';
 import { SpaceTeamManagementService } from '@services/space-team-management.service';
 import { PermissionService } from '@services/permission.service';
 import { MasOperatorService } from '@services/mas-operator.service';
@@ -28,6 +28,8 @@ import { LinkInterceptorService } from '@services/LinkInterceptorService';
 import { ModelManagementService } from '@services/repositories/model-management-new';
 import { StorageService } from '@shared/services/cfdata.service';
 import { initHistoryInterceptor } from "../utils/utils";
+import { LocalAuthComponent } from './local-auth/local-auth.component';
+import { LocalAuthService, LocalUser } from '@services/local-auth.service';
 
 registerLocaleData(zh);
 
@@ -43,6 +45,7 @@ interface UserContext {
   imports: [
     MODULES,
     ...COMMON_MODULES,
+    LocalAuthComponent,
   ],
   providers: [
     HttpClient,
@@ -53,7 +56,7 @@ interface UserContext {
   ],
   standalone: true
 })
-export class AppComponent implements OnInit {
+export class AppComponent implements OnInit, OnDestroy {
   @ViewChild('templateSafeTipContent', { static: true })
   public myTemplateRef: TemplateRef<any>;
   public safeTipContext = { contentName: '', contentUrl: '' };
@@ -61,6 +64,12 @@ export class AppComponent implements OnInit {
   #subscriptions: Subscription[] = [];
 
   public pageInited = false;
+
+  public authChecking = true;
+
+  public authRequired = false;
+
+  public localUser?: LocalUser;
 
   private workspaceList = [];
 
@@ -71,6 +80,14 @@ export class AppComponent implements OnInit {
   public permissionMessage: string = '';
 
   public isUpdated: boolean = false;
+
+  private readonly localAuthRequiredHandler = (): void => {
+    if (this.localUser) {
+      this.localUser = undefined;
+      this.pageInited = false;
+      this.authRequired = true;
+    }
+  };
 
   constructor(
     @Inject(angularI18next.I18NEXT_SERVICE)
@@ -91,6 +108,7 @@ export class AppComponent implements OnInit {
     private linkInterceptorService: LinkInterceptorService,
     private modal: NzModalService,
     private modelManagementService: ModelManagementService,
+    private localAuthService: LocalAuthService,
   ) {
     this.#subscribe();
     this.#init();
@@ -98,6 +116,7 @@ export class AppComponent implements OnInit {
   }
 
   async ngOnInit(): Promise<void> {
+    window.addEventListener('local-auth-required', this.localAuthRequiredHandler);
     this.initLinkInterceptor();
     this.http.getPermissionError().subscribe((data) => {
       if (data?.error_code === 'Openjiuwen.02001084') {
@@ -105,6 +124,11 @@ export class AppComponent implements OnInit {
         this.permissionMessage = data?.error_msg || this.i18NextEagerPipe.transform('app_component_2');
       }
     });
+  }
+
+  ngOnDestroy(): void {
+    window.removeEventListener('local-auth-required', this.localAuthRequiredHandler);
+    this.#subscriptions.forEach(subscription => subscription.unsubscribe());
   }
 
   /** 初始化a标签和window.open的点击跳转事件 **/
@@ -150,7 +174,11 @@ export class AppComponent implements OnInit {
 
     this.initPocServiceType();
 
-    await this.initLiteUserDate();
+    const localAuthHandled = await this.initLocalAuth();
+    if (!localAuthHandled) {
+      await this.initLiteUserDate();
+    }
+    this.authChecking = false;
 
     initHistoryInterceptor();
     this.changeRouter();
@@ -159,6 +187,50 @@ export class AppComponent implements OnInit {
       // 监听hashchange事件
       this.changeRouter();
     };
+  }
+
+  private async initLocalAuth(): Promise<boolean> {
+    try {
+      const user = await firstValueFrom(this.localAuthService.me());
+      this.startLocalUserSession(user);
+      return true;
+    } catch (error) {
+      const httpError = error as HttpErrorResponse;
+      if (httpError.error?.redirectUrl) {
+        window.location.href = httpError.error.redirectUrl;
+        return true;
+      }
+      const status = httpError?.status;
+      if (status === 401) {
+        this.authRequired = true;
+        return true;
+      }
+      // 接口不存在说明本地认证未启用，兼容已有 SSO/SAML/简单认证部署。
+      return false;
+    }
+  }
+
+  public onLocalAuthenticated(user: LocalUser): void {
+    this.authRequired = false;
+    this.startLocalUserSession(user);
+  }
+
+  public logoutLocalUser(): void {
+    this.localAuthService.logout().subscribe({
+      next: () => window.location.reload(),
+      error: () => window.location.reload(),
+    });
+  }
+
+  private startLocalUserSession(user: LocalUser): void {
+    this.localUser = user;
+    StorageService.setSessionStorage('CUR_SPACE_OPTIONS', '{}');
+    StorageService.setSessionStorage('SPACE_OPTIONS', '[]');
+    StorageService.setLocalStorage(
+      POC_JS_SESSION_KEY,
+      JSON.stringify({ userId: user.userId, projectId: user.projectId }),
+    );
+    this.initUserDate({ userId: user.userId, projectId: user.projectId });
   }
 
   judgeHostAndPathName(){

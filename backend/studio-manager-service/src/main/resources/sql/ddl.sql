@@ -916,6 +916,7 @@ CREATE TABLE IF NOT EXISTS `t_share_scope`
 CREATE TABLE IF NOT EXISTS `t_users` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '用户唯一标识ID',
     `username` VARCHAR(100) NOT NULL UNIQUE COMMENT '用户登录名，唯一标识',
+    `password_hash` VARCHAR(100) COMMENT '本地账号密码哈希',
     `real_name` VARCHAR(100) COMMENT '用户真实姓名',
     `email` VARCHAR(100) COMMENT '用户电子邮箱',
     `phone` VARCHAR(20) COMMENT '用户联系电话',
@@ -934,6 +935,10 @@ CREATE TABLE IF NOT EXISTS `t_users` (
     INDEX `idx_domain_project` (`domain_id`, `project_id`),
     INDEX `idx_created_time` (`created_time`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- 兼容已有 t_users 表。MySQL 8.0 不支持 ADD COLUMN IF NOT EXISTS；
+-- 字段已存在时由 spring.sql.init.continue-on-error 忽略重复列错误。
+ALTER TABLE `t_users` ADD COLUMN `password_hash` VARCHAR(100);
 
 CREATE TABLE IF NOT EXISTS  `t_sessions` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '会话记录ID',
@@ -2181,4 +2186,3 @@ CREATE TABLE IF NOT EXISTS `t_task` (
     INDEX `idx_status_time`(`status` ASC, `create_time` ASC) USING BTREE,
     INDEX `idx_finish_time`(`finish_time` ASC) USING BTREE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci ROW_FORMAT=DYNAMIC COMMENT='任务记录表';
-

@@ -30,10 +30,13 @@ import com.openjiuwen.studio.agent.manager.dto.WorkspaceMemberInfo;
 import com.openjiuwen.studio.agent.manager.dto.iam.GetIamUserResponse;
 import com.openjiuwen.studio.agent.manager.entity.WorkSpaceMemberEntity;
 import com.openjiuwen.studio.agent.manager.entity.WorkspaceEntity;
+import com.openjiuwen.studio.agent.manager.entity.User;
 import com.openjiuwen.studio.agent.manager.mapper.workspace.WorkspaceMapper;
 import com.openjiuwen.studio.agent.manager.mapper.workspace.WorkspaceMemberMapper;
 import com.openjiuwen.studio.agent.manager.service.IWorkSpaceMemberService;
 import com.openjiuwen.studio.agent.manager.service.SkuManageService;
+import com.openjiuwen.studio.agent.manager.repository.UserRepository;
+import com.openjiuwen.studio.agent.manager.service.local.LocalAccountService;
 import com.openjiuwen.studio.agent.manager.utils.IamServiceUtils;
 
 import jakarta.annotation.Resource;
@@ -44,10 +47,12 @@ import org.apache.commons.lang3.Strings;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashSet;
@@ -74,6 +79,12 @@ public class WorkspaceMemberService implements IWorkSpaceMemberService {
 
     @Resource
     IamServiceUtils iamServiceUtils;
+
+    @Resource
+    private UserRepository userRepository;
+
+    @Autowired
+    private ObjectProvider<LocalAccountService> localAccountServiceProvider;
 
     @Value("${workspace.role:}")
     private String roleListStr;
@@ -247,6 +258,9 @@ public class WorkspaceMemberService implements IWorkSpaceMemberService {
 
     @Override
     public GetWorkspaceMemberListRsp queryIamUserList(String projectId) {
+        if (localAccountServiceProvider != null && localAccountServiceProvider.getIfAvailable() != null) {
+            return queryLocalUserList();
+        }
         String domainToken = iamServiceUtils.queryDomainTokenFromCache("");
 
         GetIamUserResponse response = iamServiceUtils.queryIamUserList(domainToken);
@@ -267,6 +281,22 @@ public class WorkspaceMemberService implements IWorkSpaceMemberService {
         memberListRsp.setWorkspaceList(workspaceMemberInfoList);
         memberListRsp.setCount(workspaceMemberInfoList.size());
         return memberListRsp;
+    }
+
+    private GetWorkspaceMemberListRsp queryLocalUserList() {
+        List<WorkspaceMemberInfo> users = userRepository.findActiveUsers(LocalDateTime.now()).stream()
+            .filter(user -> user.getSource() == User.UserSource.INTERNAL)
+            .map(user -> {
+                WorkspaceMemberInfo member = new WorkspaceMemberInfo();
+                member.setMemberId(user.getUsername());
+                member.setMemberName(StringUtils.defaultIfBlank(user.getRealName(), user.getUsername()));
+                return member;
+            })
+            .collect(Collectors.toCollection(ArrayList::new));
+        GetWorkspaceMemberListRsp response = new GetWorkspaceMemberListRsp();
+        response.setWorkspaceList(users);
+        response.setCount(users.size());
+        return response;
     }
 
     @Override

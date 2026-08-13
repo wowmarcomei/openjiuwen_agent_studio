@@ -28,6 +28,12 @@ public interface SessionRepository extends JpaRepository<Session, Long> {
     int updateLastActivity(@Param("sessionId") String sessionId, @Param("activityTime") LocalDateTime activityTime);
 
     @Modifying
+    @Query("UPDATE Session s SET s.status = :status, s.logoutTime = :logoutTime "
+        + "WHERE s.sessionId = :sessionId AND s.status = 'ACTIVE'")
+    int logoutSession(@Param("sessionId") String sessionId, @Param("status") Session.SessionStatus status,
+        @Param("logoutTime") LocalDateTime logoutTime);
+
+    @Modifying
     @Query("UPDATE Session s SET s.status = 'EXPIRED' WHERE s.expireTime < :currentTime AND s.status = 'ACTIVE'")
     int expireSessions(@Param("currentTime") LocalDateTime currentTime);
 

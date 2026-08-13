@@ -146,6 +146,10 @@ public class SsoAuthenticationFilter extends OncePerRequestFilter {
      * 判断请求路径是否在排除列表中（支持 Ant 模式匹配）
      */
     private boolean isExcluded(String requestUri) {
+        // 本地认证探测接口在SSO模式下不存在，放行后返回404，便于Console回退到原SSO流程。
+        if (requestUri.startsWith("/auth/local/")) {
+            return true;
+        }
         if (excludePaths == null || excludePaths.isEmpty()) {
             return false;
         }

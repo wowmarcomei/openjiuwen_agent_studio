@@ -23,6 +23,10 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     Optional<User> findByUsername(String username);
 
+    Optional<User> findByUsernameIgnoreCase(String username);
+
+    boolean existsByUsernameIgnoreCase(String username);
+
     @Query("SELECT u FROM User u WHERE u.isActive = true AND (u.expireTime IS NULL OR u.expireTime > :currentTime)")
     List<User> findActiveUsers(@Param("currentTime") LocalDateTime currentTime);
 

@@ -161,7 +161,8 @@ public class SamlAuthFilter extends OncePerRequestFilter {
     }
 
     private boolean isAuthExcludedPath(String path) {
-        return path.startsWith("/saml/") || path.startsWith("/api/auth/") || path.startsWith("/login")
+        return path.startsWith("/saml/") || path.startsWith("/api/auth/") || path.startsWith("/auth/local/")
+            || path.startsWith("/login")
             || path.startsWith("/css/") || path.startsWith("/js/") || path.startsWith("/images/")
             || path.startsWith("/api/public/") || path.equals("/") || path.equals("/favicon.ico")
             || path.equals("/v3/auth/tokens") || path.startsWith("/health");

@@ -1,0 +1,72 @@
+<main class="auth-page">
+  <section class="brand-panel">
+    <div class="brand-mark"><span></span><span></span><span></span></div>
+    <div class="brand-copy">
+      <p class="eyebrow">openJiuwen</p>
+      <h1>AgentStudio</h1>
+      <p class="brand-description">让每位成员在自己的空间里构建、协作与管理智能体。</p>
+    </div>
+    <div class="space-preview">
+      <div class="preview-title"><i></i> 登录后加载你的空间</div>
+      <div class="preview-row"><span class="space-icon personal">个</span><b>个人空间</b><small>仅你可见</small></div>
+      <div class="preview-row"><span class="space-icon team">团</span><b>团队空间</b><small>按成员权限协作</small></div>
+    </div>
+  </section>
+
+  <section class="form-panel">
+    <div class="auth-card">
+      <div class="mobile-brand">openJiuwen · AgentStudio</div>
+      <div class="mode-tabs" role="tablist">
+        <button type="button" [class.active]="!isRegister" (click)="switchMode(false)">登录</button>
+        <button type="button" [class.active]="isRegister" (click)="switchMode(true)">注册</button>
+      </div>
+
+      <div class="heading">
+        <h2>{{ isRegister ? '创建你的账号' : '欢迎回来' }}</h2>
+        <p>{{ isRegister ? '注册后会自动创建专属个人空间' : '登录后继续进入你的工作空间' }}</p>
+      </div>
+
+      <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+        <label>
+          <span>用户名</span>
+          <input formControlName="username" autocomplete="username" placeholder="3–64 位字母、数字或 . _ -"
+            [class.invalid]="fieldInvalid('username')" />
+        </label>
+
+        <label *ngIf="isRegister">
+          <span>显示名称</span>
+          <input formControlName="realName" autocomplete="name" placeholder="例如：张三"
+            [class.invalid]="fieldInvalid('realName')" />
+        </label>
+
+        <label *ngIf="isRegister">
+          <span>邮箱 <em>选填</em></span>
+          <input formControlName="email" type="email" autocomplete="email" placeholder="name@example.com"
+            [class.invalid]="fieldInvalid('email')" />
+        </label>
+
+        <label>
+          <span>密码</span>
+          <input formControlName="password" type="password"
+            [attr.autocomplete]="isRegister ? 'new-password' : 'current-password'" placeholder="至少 8 位字符"
+            [class.invalid]="fieldInvalid('password')" />
+        </label>
+
+        <label *ngIf="isRegister">
+          <span>确认密码</span>
+          <input formControlName="confirmPassword" type="password" autocomplete="new-password"
+            placeholder="再次输入密码" [class.invalid]="fieldInvalid('confirmPassword')" />
+        </label>
+
+        <div class="error-message" [class.visible]="errorMessage">{{ errorMessage || ' ' }}</div>
+
+        <button class="submit-button" type="submit" [disabled]="submitting">
+          <span class="spinner" *ngIf="submitting"></span>
+          {{ submitting ? '正在处理…' : (isRegister ? '注册并进入 Console' : '进入 Console') }}
+        </button>
+      </form>
+
+      <p class="security-note"><span>✓</span> 密码经安全哈希保存，会话仅通过 HttpOnly Cookie 传输</p>
+    </div>
+  </section>
+</main>

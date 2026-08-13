@@ -4,6 +4,8 @@
 
 package com.openjiuwen.studio.agent.manager.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -38,6 +40,10 @@ public class User {
 
     @Column(name = "username", unique = true, nullable = false, length = 100)
     private String username;
+
+    @JsonIgnore
+    @Column(name = "password_hash", length = 100)
+    private String passwordHash;
 
     @Column(name = "real_name", length = 100)
     private String realName;

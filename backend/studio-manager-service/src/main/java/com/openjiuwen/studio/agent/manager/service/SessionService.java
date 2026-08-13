@@ -58,6 +58,8 @@ public class SessionService {
         session.setSessionId(sessionId);
         session.setUserId(user.getId());
         session.setUsername(user.getUsername());
+        session.setIpAddress(resolveClientIp(request));
+        session.setUserAgent(request.getHeader("User-Agent"));
         session.setLoginTime(now);
         session.setLastActivityTime(now);
         session.setExpireTime(absoluteExpireTime);
@@ -151,6 +153,18 @@ public class SessionService {
     }
 
     /**
+     * 主动注销会话，同时删除Redis中的会话数据。
+     */
+    @Transactional
+    public void logoutSession(String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return;
+        }
+        sessionRepository.logoutSession(sessionId, Session.SessionStatus.LOGGED_OUT, LocalDateTime.now());
+        redisTemplate.delete(REDIS_SESSION_PREFIX + sessionId);
+    }
+
+    /**
      * 清理过期会话 - 完善版：包含状态标记和物理删除
      */
     @Transactional
@@ -172,6 +186,14 @@ public class SessionService {
      */
     private String generateSessionId() {
         return java.util.UUID.randomUUID().toString();
+    }
+
+    private String resolveClientIp(HttpServletRequest request) {
+        String forwardedFor = request.getHeader("X-Forwarded-For");
+        if (forwardedFor != null && !forwardedFor.isBlank()) {
+            return forwardedFor.split(",", 2)[0].trim();
+        }
+        return request.getRemoteAddr();
     }
 
 }

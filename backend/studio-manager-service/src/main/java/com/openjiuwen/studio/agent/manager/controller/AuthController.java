@@ -10,6 +10,7 @@ import com.openjiuwen.studio.agent.common.utils.simple.SimpleAuthUtils;
 import com.openjiuwen.studio.agent.common.dto.ErrorRsp;
 import com.openjiuwen.studio.agent.manager.service.simple.IAuthService;
 import com.openjiuwen.studio.agent.manager.service.simple.SimpleAuthService;
+import com.openjiuwen.studio.agent.manager.service.local.LocalAccountService;
 
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiResponse;
@@ -21,7 +22,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationContext;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -47,6 +50,9 @@ public class AuthController {
     private ApplicationContext applicationContext;
 
     private IAuthService authService;
+
+    @Autowired
+    private ObjectProvider<LocalAccountService> localAccountServiceProvider;
 
     @Value("${poc.auth-type:normal}")
     private String authType;
@@ -78,6 +84,12 @@ public class AuthController {
     public ResponseEntity<SimpleUser> validateToken(
         @RequestHeader("X-Subject-Token") String token,
         @RequestParam(value = "nocatalog", required = false) String nocatalog) {
+        LocalAccountService localAccountService = localAccountServiceProvider.getIfAvailable();
+        if (localAccountService != null) {
+            return localAccountService.validateToken(token)
+                .map(user -> ResponseEntity.ok().header("X-Subject-Token", token).body(user))
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.UNAUTHORIZED).build());
+        }
         return authService.validateToken(token);
     }
 

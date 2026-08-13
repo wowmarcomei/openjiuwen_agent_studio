@@ -18,6 +18,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.ServletRequest;
 import jakarta.servlet.ServletResponse;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -65,17 +66,29 @@ public class SimpleUserContextFilter implements Filter {
 
         String agentSid = ServletUtils.getAgentSid(httpRequest);
         if (StringUtils.isEmpty(agentSid)) {
+            agentSid = httpRequest.getHeader(SimpleConstants.X_AUTH_TOKEN);
+        }
+        if (StringUtils.isEmpty(agentSid)) {
             chain.doFilter(request, response);
             return;
         }
 
         SimpleUser simpleUser = getUserByToken(agentSid);
-        if (simpleUser != null) {
-            httpRequest.setAttribute(CURRENT_USER, simpleUser);
-            RequestContextUtils.setContext(simpleUser);
+        if (simpleUser == null) {
+            HttpServletResponse httpResponse = (HttpServletResponse) response;
+            httpResponse.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            httpResponse.setContentType("application/json");
+            httpResponse.setCharacterEncoding("UTF-8");
+            httpResponse.getWriter().write("{\"code\":\"AUTH_REQUIRED\",\"message\":\"登录已过期，请重新登录\"}");
+            return;
         }
-
-        chain.doFilter(request, response);
+        httpRequest.setAttribute(CURRENT_USER, simpleUser);
+        RequestContextUtils.setContext(simpleUser);
+        try {
+            chain.doFilter(request, response);
+        } finally {
+            RequestContextUtils.remove();
+        }
     }
 
     private SimpleUser getUserByToken(String token) {
