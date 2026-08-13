@@ -5,9 +5,34 @@ import {I18NEXT_NAMESPACE, I18NextEagerPipe} from 'angular-i18next';
 import {I18nNamespace} from '@i18n';
 import {SpaceTeamManagementService} from '@services/space-team-management.service';
 import {CommonUtils} from '../../../../utils/common.util';
-import {getSessionStorage} from "../../../../utils/utils";
 import {NzMessageService} from "ng-zorro-antd/message";
 import {NzModalRef} from 'ng-zorro-antd/modal';
+import {LocalAuthService} from '@services/local-auth.service';
+
+interface SelectableWorkspaceUser {
+  memberId: string;
+  memberName: string;
+  value: string;
+  disabled: boolean;
+}
+
+interface WorkspaceMemberRecord {
+  memberId: string;
+  memberName?: string;
+  role: string;
+}
+
+interface WorkspaceRoleRecord {
+  roleId: string;
+  roleNameCn: string;
+  roleNameEn: string;
+}
+
+interface WorkspaceRoleOption {
+  label: string;
+  value: string;
+  disabled: boolean;
+}
 
 @Component({
   selector: 'space-add-user',
@@ -27,36 +52,35 @@ export class AddUserComponent implements OnInit, OnDestroy {
   @Input() space_id: '';
 
   btnLoading = false;
-  btn_disabled = false;
 
   search_value = '';
-  checkedArray = [];
-  has_add_user = [];
-  has_add_user_id = [];
+  checkedArray: SelectableWorkspaceUser[] = [];
+  has_add_user_id: string[] = [];
   // 数据列表
-  dataArray1: Array<any> = [];
-  originDataArray1: Array<any> = [];
-  integrationTabsOption: Array<any> = [];
-  space_team_users = [];
-  roles_all = getSessionStorage('ROLES') ? getSessionStorage('ROLES') : [];
+  dataArray1: SelectableWorkspaceUser[] = [];
+  originDataArray1: SelectableWorkspaceUser[] = [];
+  integrationTabsOption: WorkspaceRoleOption[] = [];
+  space_team_users: WorkspaceMemberRecord[] = [];
+  roles_all: WorkspaceRoleRecord[] = [];
   checkAll = false;
+  indeterminate = false;
+  isLocalAuthentication = false;
+
+  get canSubmit(): boolean {
+    return this.checkedArray.length > 0 && this.checkedArray.every((item) => Boolean(item.value));
+  }
 
   constructor(
     private i18n: I18NextEagerPipe,
     private spaceTeamManagementService: SpaceTeamManagementService,
     private message: NzMessageService,
-    private modalRef: NzModalRef
+    private modalRef: NzModalRef,
+    private localAuthService: LocalAuthService,
   ) {}
 
  async ngOnInit() {
-    const lang = CommonUtils.getLanguage();
-   this.integrationTabsOption = this.roles_all.map((item) => {
-      item.disabled = item.roleId === 'OWNER';
-      item.roleName = lang === 'zh-cn' ? item.roleNameCn : CommonUtils.titleCase3(item.roleNameEn)
-      return {
-        ...item,
-      };
-    });
+    this.isLocalAuthentication = Boolean(this.localAuthService.currentUser);
+    await this.getSpaceMemberRoles();
     await this.get_space_members();
     await this.getAllUsersFn();
   }
@@ -71,45 +95,44 @@ export class AddUserComponent implements OnInit, OnDestroy {
     this.modalRef.destroy();
   }
 
-  addUserFn() {
-    if (this.checkedArray.length === 0) {
+  async addUserFn(): Promise<void> {
+    const pendingUsers = this.checkedArray.filter(
+      (item) => !this.has_add_user_id.includes(item.memberId),
+    );
+    if (pendingUsers.length === 0) {
       this.message.create('error', this.i18n.transform('no_person_selected'));
       return;
     }
+    if (pendingUsers.some((item) => !item.value)) {
+      this.message.create('error', this.i18n.transform('please_select_a_character'));
+      return;
+    }
+
     this.btnLoading = true;
-    const members = [];
-    const members_name = [];
-    this.checkedArray.forEach((item) => {
-      if (!this.has_add_user_id.includes(item.memberId)) {
-        members.push({
-          member_id: item.memberId,
-          member_name: item.memberName,
-          role: item.value,
-          member_source: 'IAM',
-        });
-        members_name.push(item.memberName);
-      }
-    });
+    const memberSource = this.isLocalAuthentication ? 'INTERNAL' : 'IAM';
+    const members = pendingUsers.map((item) => ({
+      member_id: item.memberId,
+      member_name: item.memberName,
+      role: item.value,
+      member_source: memberSource,
+    }));
     const params = {
       members,
     };
-    this.spaceTeamManagementService
-      .addSpaceMembers(params)
-      .then((res) => {
-        const tip = this.i18n.transform('add_user_success');
-        this.message.create('success', `${(members_name.join(','), tip)}`);
-        this.close();
-      })
-      .catch(() => {
-        const error_code = getSessionStorage('error_code');
-        if (['Openjiuwen.02001064', 'Openjiuwen.02001022'].includes(error_code)) {
-          this.close();
-        }
-        this.close();
-      })
-      .finally(() => {
-        this.btnLoading = false;
-      });
+
+    try {
+      await this.spaceTeamManagementService.addSpaceMembers(params);
+      this.message.create('success', this.i18n.transform('add_user_success'));
+      this.close();
+    } catch (error: any) {
+      const errorMessage = error?.error?.error_msg_front
+        || error?.error?.error_msg
+        || error?.error?.message
+        || this.i18n.transform('add_user_failed');
+      this.message.create('error', errorMessage);
+    } finally {
+      this.btnLoading = false;
+    }
   }
 
   async get_space_members() {
@@ -120,8 +143,21 @@ export class AddUserComponent implements OnInit, OnDestroy {
     await this.spaceTeamManagementService
       .getSpaceMembers(params)
       .then((res: any) => {
-        this.space_team_users = res?.workspaceList;
+        this.space_team_users = res?.workspaceList || [];
       });
+  }
+
+  async getSpaceMemberRoles(): Promise<void> {
+    const response: any = await this.spaceTeamManagementService.getSpaceMemberRoles();
+    this.roles_all = response?.roleList || [];
+    const lang = CommonUtils.getLanguage();
+    this.integrationTabsOption = this.roles_all
+      .filter((item) => item.roleId !== 'OWNER')
+      .map((item) => ({
+        label: lang === 'zh-cn' ? item.roleNameCn : CommonUtils.titleCase3(item.roleNameEn),
+        value: item.roleId,
+        disabled: false,
+      }));
   }
 
   role_name(id: string): string {
@@ -129,73 +165,104 @@ export class AddUserComponent implements OnInit, OnDestroy {
     return role.length ? role[0].roleNameCn : '';
   }
 
-  deleteUser(data) {
+  deleteUser(data: SelectableWorkspaceUser): void {
     this.checkedArray = this.checkedArray.filter(
       (item) => item.memberId !== data.memberId,
     );
+    this.syncSelectAllState();
   }
 
   async getAllUsersFn() {
    await this.spaceTeamManagementService.getAllUsers().then((res: any) => {
-      const list = [];
+      const list: SelectableWorkspaceUser[] = [];
+      this.has_add_user_id = [];
+      const defaultRole = this.integrationTabsOption.some((role) => role.value === 'DEVELOPER')
+        ? 'DEVELOPER'
+        : this.integrationTabsOption[0]?.value;
       res.workspaceList?.forEach((item) => {
-        const is_user = this.space_team_users.filter(
+        const existingMembers = this.space_team_users.filter(
           (arr) => item.memberId === arr.memberId,
         );
-        if (is_user.length === 1) {
-          const nj = {
+        if (existingMembers.length > 0) {
+          const existingUser: SelectableWorkspaceUser = {
             memberId: item.memberId,
             memberName: item.memberName,
-            value: is_user[0].role,
+            value: existingMembers[0].role,
             disabled: true,
           };
-          this.has_add_user.push(nj);
           this.has_add_user_id.push(item.memberId);
-          list.push(nj);
+          list.push(existingUser);
         } else {
           list.push({
             memberId: item.memberId,
             memberName: item.memberName,
-            value: 'DEVELOPER',
+            value: defaultRole,
             disabled: false,
           });
         }
       });
       this.dataArray1 = list;
       this.originDataArray1 = list;
-      this.checkedArray = this.has_add_user;
+      this.checkedArray = [];
+      this.syncSelectAllState();
     });
   }
 
-  onClear() {
-    this.dataArray1 = this.originDataArray1;
+  isUserChecked(item: SelectableWorkspaceUser): boolean {
+    return item.disabled || this.checkedArray.some((selected) => selected.memberId === item.memberId);
   }
 
-  onSearch(value: string) {
-    if (!value) {
-      this.dataArray1 = this.originDataArray1;
+  onUserChecked(item: SelectableWorkspaceUser, checked: boolean): void {
+    if (item.disabled) {
       return;
     }
-    this.dataArray1 = this.dataArray1.filter(
-      (item) => item.memberName.indexOf(value) > -1,
-    );
-  }
 
-  onSelectChange(info) {
-    if (!info) {
-      this.dataArray1 = this.originDataArray1;
-      return;
+    const isSelected = this.checkedArray.some((selected) => selected.memberId === item.memberId);
+    if (checked && !isSelected) {
+      this.checkedArray = [...this.checkedArray, item];
+    } else if (!checked && isSelected) {
+      this.checkedArray = this.checkedArray.filter((selected) => selected.memberId !== item.memberId);
     }
+    this.syncSelectAllState();
   }
 
-  onNgcheckAll(info) {
-    if (info) {
-      const has_no_add = this.dataArray1.filter(
-        (item) => !this.has_add_user_id.includes(item.memberId),
-      );
-      this.checkedArray = [...this.has_add_user, ...has_no_add];
+  onSearch(value: string): void {
+    const searchText = value?.trim().toLocaleLowerCase();
+    if (!searchText) {
+      this.dataArray1 = this.originDataArray1;
     } else {
-      this.checkedArray = this.has_add_user;
+      this.dataArray1 = this.originDataArray1.filter((item) =>
+        item.memberName.toLocaleLowerCase().includes(searchText)
+        || item.memberId.toLocaleLowerCase().includes(searchText),
+      );
     }
+    this.syncSelectAllState();
+  }
+
+  onNgcheckAll(checked: boolean): void {
+    const visibleUserIds = new Set(
+      this.dataArray1.filter((item) => !item.disabled).map((item) => item.memberId),
+    );
+    if (checked) {
+      const selectedUsers = new Map(this.checkedArray.map((item) => [item.memberId, item]));
+      this.dataArray1.filter((item) => !item.disabled).forEach((item) => {
+        selectedUsers.set(item.memberId, item);
+      });
+      this.checkedArray = Array.from(selectedUsers.values());
+    } else {
+      this.checkedArray = this.checkedArray.filter((item) => !visibleUserIds.has(item.memberId));
+    }
+    this.syncSelectAllState();
+  }
+
+  trackByMemberId(_index: number, item: SelectableWorkspaceUser): string {
+    return item.memberId;
+  }
+
+  private syncSelectAllState(): void {
+    const visibleUsers = this.dataArray1.filter((item) => !item.disabled);
+    const selectedCount = visibleUsers.filter((item) => this.isUserChecked(item)).length;
+    this.checkAll = visibleUsers.length > 0 && selectedCount === visibleUsers.length;
+    this.indeterminate = selectedCount > 0 && selectedCount < visibleUsers.length;
   }
 }

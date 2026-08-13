@@ -1,6 +1,6 @@
 <div class="add-user-header">
   <span>{{ 'add_user' | i18nextEager }}</span>
-  <span nz-icon nzType="question-circle" nzTheme="outline" nz-tooltip [nzTooltipTitle]="'add_user_tip' | i18nextEager" nzTooltipPlacement="right" class="ml-[10px] cursor-pointer"></span>
+  <span nz-icon nzType="question-circle" nzTheme="outline" nz-tooltip [nzTooltipTitle]="(isLocalAuthentication ? 'add_local_user_tip' : 'add_user_tip') | i18nextEager" nzTooltipPlacement="right" class="ml-[10px] cursor-pointer"></span>
 </div>
 <div style="padding: 0 20px">
   <div class="add-user flex">
@@ -11,7 +11,7 @@
           nz-input
           [placeholder]="'enter_user_nickname_to_search' | i18nextEager"
           [(ngModel)]="search_value"
-          (ngModelChange)="onSelectChange($event)"
+          (ngModelChange)="onSearch($event)"
         />
       </nz-input-group>
       <ng-template #suffixIconSearch>
@@ -24,13 +24,14 @@
               type="checkbox"
               nz-checkbox
               [(ngModel)]="checkAll"
+              [nzIndeterminate]="indeterminate"
               (ngModelChange)="onNgcheckAll($event)"
             />
             <span>{{ 'all'|i18nextEager }}</span>
           </label>
         </div>
         <div
-          *ngFor="let item of dataArray1; index as i"
+          *ngFor="let item of dataArray1; index as i; trackBy: trackByMemberId"
           class="user-item flex items-center"
         >
           <label class="flex items-center gap-[10px] cursor-pointer" [class.opacity-50]="item.disabled">
@@ -38,12 +39,13 @@
               type="checkbox"
               nz-checkbox
               [id]="'checkitem-temp-' + i"
-              [nzChecked]="checkedArray.includes(item)"
+              [nzChecked]="isUserChecked(item)"
               [nzDisabled]="item.disabled"
+              (nzCheckedChange)="onUserChecked(item, $event)"
             />
-            <span class="w-[240px] overflow-hidden text-ellipsis whitespace-nowrap">{{
-              item.memberName
-            }}</span>
+            <span class="w-[240px] overflow-hidden text-ellipsis whitespace-nowrap">
+              {{ item.memberName }}<span *ngIf="item.memberName !== item.memberId">（{{ item.memberId }}）</span>
+            </span>
           </label>
         </div>
       </div>
@@ -51,14 +53,14 @@
     <div class="right-con flex-1">
       <p>{{ 'selected' | i18nextEager }}：{{ checkedArray.length }}</p>
       <div class="user-list mt-3 overflow-auto">
-        <div *ngFor="let item of checkedArray" class="user-item">
+        <div *ngFor="let item of checkedArray; trackBy: trackByMemberId" class="user-item">
           <div class="mb-3 flex items-center gap-5">
             <span class="w-[150px] overflow-hidden text-ellipsis whitespace-nowrap">{{ item.memberName }}</span>
             <nz-select
               style="width: 150px"
               [nzOptions]="integrationTabsOption"
               [(ngModel)]="item.value"
-              nzPlaceHolder="please_select_a_character"
+              [nzPlaceHolder]="'please_select_a_character' | i18nextEager"
               [nzDisabled]="item.disabled"
             >
             </nz-select>
@@ -79,7 +81,7 @@
     nzType="primary"
     (click)="addUserFn()"
     [nzLoading]="btnLoading"
-    [disabled]="btn_disabled"
+    [disabled]="btnLoading || !canSubmit"
   >
     {{ 'ok' | i18nextEager }}
   </button>

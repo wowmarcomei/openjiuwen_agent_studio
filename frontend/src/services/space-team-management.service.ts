@@ -80,6 +80,7 @@ export class SpaceTeamManagementService {
     return this.http.postAsync({
       url: `${this.prefix}/workspace/member`,
       params,
+      cancelGlobalError: true,
       query: {
         workspace_id: this.cur_workspace_id,
       },

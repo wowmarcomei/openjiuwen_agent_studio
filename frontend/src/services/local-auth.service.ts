@@ -28,6 +28,10 @@ export class LocalAuthService {
 
   readonly currentUser$ = this.currentUserSubject.asObservable();
 
+  get currentUser(): LocalUser | null {
+    return this.currentUserSubject.value;
+  }
+
   constructor(private readonly http: HttpClient) {}
 
   me(): Observable<LocalUser> {

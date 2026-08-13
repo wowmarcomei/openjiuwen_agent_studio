@@ -13,6 +13,8 @@
   "member_role": "Member Role",
   "transfer_ownership": "Transfer ownership to",
   "add_user_success": "Member added successfully",
+  "add_user_failed": "Failed to add members. Please try again later",
+  "add_local_user_tip": "Select registered local users to join the team workspace and assign member roles",
   "all_characters": "All Roles",
   "nick_name": "Nickname",
   "character": "Role",

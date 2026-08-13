@@ -13,6 +13,8 @@
   "member_role": "成员角色",
   "transfer_ownership": "将所有权转让给",
   "add_user_success": "添加成员成功",
+  "add_user_failed": "添加成员失败，请稍后重试",
+  "add_local_user_tip": "选择已注册的本地用户加入团队空间，并为其分配成员角色",
   "all_characters": "所有角色",
   "nick_name": "昵称",
   "character": "角色",
